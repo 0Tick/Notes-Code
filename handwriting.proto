@@ -1,0 +1,39 @@
+syntax = "proto3";
+package NotesCode; 
+
+message Document {
+    repeated Stroke strokes = 1;
+    repeated Image images = 2;
+    repeated TextBlock textBlocks = 3;
+}
+
+message Stroke {
+    repeated Point points = 1;
+    string color = 2;
+    float width = 3;
+}
+
+message Point {
+    float pressure = 3;
+    float x = 1;
+    float y = 2;
+}
+
+message Image {
+    string image = 1;
+    float x = 2;
+    float y = 3;
+    float scaleX = 4;
+    float scaleY = 5;
+}
+
+message TextBlock {
+    string text = 1;
+    // 1: LaTeX, 2: Markdown, 3: Code, 4: Plain Text
+    int32 renderingType = 3;
+    int32 fontSize = 6;
+    float x = 4;
+    float y = 5;
+    float scaleX = 7;
+    float scaleY = 8;
+}
