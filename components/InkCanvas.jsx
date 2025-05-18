@@ -20,12 +20,15 @@ function InkCanvas() {
   const [style, setStyle] = useState({ ...INITIAL_STYLE });
   const [colorNames, setColorNames] = useState(Object.keys(COLORS));
   const [drawing, setDrawing] = useState(false);
-  const [lastPoint, setLastPoint] = useState(null);
+  //const [lastPoint, setLastPoint] = useState(null);
   const [points, setPoints] = useState([]);
   const [page, setPage] = useState({ strokes: [] });
   const [isZoom, setIsZoom] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
+  const [onlyPen, setOnlyPen] = useState(true);
+
+  const lastPointRef = useRef(null);
 
   const zoomSpeed = 20;
 
@@ -62,23 +65,23 @@ function InkCanvas() {
     const canvas = canvasRef.current;
 
     const handlePointerDown = (evt) => {
-      if (evt.pointerType !== "pen") return;
+      if (evt.pointerType !== "pen"  && onlyPen) return;
       setDrawing(true);
-      setLastPoint({ x: evt.offsetX, y: evt.offsetY });
+      /*setLastPoint*/lastPointRef.current ={ x: evt.offsetX, y: evt.offsetY };
       setPoints([]);
     };
 
     const handlePointerMove = async (evt) => {
-      if (!drawing || evt.pointerType !== "pen") return;
+      if (!drawing || evt.pointerType !== "pen" && onlyPen) return;
       const ctx = ctxRef.current;
       ctx.strokeStyle = style.color;
       ctx.lineWidth = calculateThickness(evt.pressure);
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(lastPoint.x, lastPoint.y);
+      ctx.moveTo(/* lastPoint */lastPointRef.current.x, /* lastPoint */lastPointRef.current.y);
       ctx.lineTo(evt.offsetX, evt.offsetY);
       ctx.stroke();
-      setLastPoint({ x: evt.offsetX, y: evt.offsetY });
+      /* setLastPoint */lastPointRef.current ={ x: evt.offsetX, y: evt.offsetY };
       setPoints((pts) => [...pts, [evt.offsetX, evt.offsetY, evt.pressure]]);
 
       if (presenter) {
@@ -89,7 +92,8 @@ function InkCanvas() {
     const handlePointerUp = () => {
       if (!drawing) return;
       setDrawing(false);
-      setLastPoint(null);
+      // setLastPoint(null);
+      lastPointRef.current = null;
       setPage((prev) => ({
         strokes: [
           ...prev.strokes,
@@ -112,7 +116,7 @@ function InkCanvas() {
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [drawing, lastPoint, style, presenter, points]);
+  }, [drawing, /* lastPoint */lastPointRef.current, style, presenter, points, onlyPen]);
 
   // Zoom und Offset mit Mausrad
   useEffect(() => {
@@ -175,12 +179,17 @@ function InkCanvas() {
     const currentColor = colorNames[0];
     const newColorNames = [...colorNames.slice(1), currentColor];
     setColorNames(newColorNames);
-    console.log(newColorNames);
     setStyle((prev) => ({
       ...prev,
       color: COLORS[newColorNames[0]],
       colorName: newColorNames[0],
     }));
+  }
+
+  function handleOnlyPen() {
+    // Toggles Touch and Mouse Inputs
+    setOnlyPen(!onlyPen);
+    console.log(onlyPen);
   }
 
   return (
@@ -198,6 +207,11 @@ function InkCanvas() {
       >
         {style.colorName}
       </button>
+      <button 
+        onClick={handleOnlyPen} 
+        style={{color: onlyPen ? "#00FF00": "#FF0000"}}>
+          {onlyPen ? "Nur Stifteingaben akzeptieren": "Alle Eingaben akzeptieren"}
+          </button>
       <canvas
         ref={canvasTwoRef}
         height={500}
