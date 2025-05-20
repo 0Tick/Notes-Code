@@ -30,6 +30,7 @@ import {
   FilePlus2,
   File,
   Folders,
+  FolderPlus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -47,6 +48,17 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -71,6 +83,13 @@ export default function NotionClone() {
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookDescription, setNewNotebookDescription] = useState("");
   const [showNewNotebookModal, setShowNewNotebookModal] = useState(false);
+  const [showNewDirectoryModal, setShowNewDirectoryModal] = useState(false);
+  const [newDirectoryName, setNewDirectoryName] = useState("");
+  const [showDeleteDirectoryDialog, setShowDeleteDirectoryDialog] =
+    useState(false);
+  const [directoryToDelete, setDirectoryToDelete] = useState<string | null>(
+    null
+  );
 
   // Use the custom filesystem hook
   const {
@@ -93,6 +112,8 @@ export default function NotionClone() {
     loadPage,
     savePage,
     createNewNotebook,
+    removeDirectory,
+    createDirectory,
   } = useFilesystem();
 
   // Current date and time for greeting
@@ -176,6 +197,39 @@ export default function NotionClone() {
       createNewNotebook(newNotebookName, "Notebook Description");
     }
   }, [newNotebookName]);
+
+  const rmDir = useCallback(
+    async (name: string) => {
+      if (directoryHandle === undefined) {
+        errorToast({
+          title: "Failed to delete directory",
+          description: "Directory handle is not defined",
+        });
+        return Promise.reject();
+      }
+
+      removeDirectory(name).then(() => {
+        toast({
+          title: "Directory deleted",
+          description: `The directory "${name}" has been deleted.`,
+        });
+      });
+    },
+    [directoryHandle, toast, errorToast]
+  );
+
+  const openNewDirectoryModal = useCallback(() => {
+    setShowNewDirectoryModal(true);
+  }, []);
+
+  const createDir = useCallback(() => {
+    if (newDirectoryName.trim()) {
+      console.log("Creating new directory:", newDirectoryName);
+      createDirectory(newDirectoryName);
+      setNewDirectoryName("");
+      setShowNewDirectoryModal(false);
+    }
+  }, [newDirectoryName]);
 
   // Recently visited pages data
   const recentPages = [
@@ -582,6 +636,89 @@ export default function NotionClone() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog
+            open={showNewDirectoryModal}
+            onOpenChange={setShowNewDirectoryModal}
+          >
+            <DialogTrigger asChild>
+              <div
+                className={`flex items-center gap-2 text-gray-400 hover:text-white cursor-pointer transition ${
+                  sidebarCollapsed ? "justify-center" : ""
+                }`}
+                onClick={openNewDirectoryModal}
+              >
+                <FolderPlus className="h-4 w-4" />
+                {!sidebarCollapsed && (
+                  <span className="text-sm">New Folder</span>
+                )}
+              </div>
+            </DialogTrigger>
+            <DialogContent className="bg-[#222] border-[#333] text-white">
+              <DialogHeader>
+                <DialogTitle>Create a new folder</DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Give your folder a name.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Input
+                  placeholder="Untitled Folder"
+                  className="bg-[#333] border-[#444] text-white focus-visible:ring-[#555]"
+                  value={newDirectoryName}
+                  onChange={(e) => setNewDirectoryName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button
+                    variant="outline"
+                    className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white"
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button
+                  className="bg-white text-black hover:bg-gray-200"
+                  onClick={createDir}
+                  disabled={!newDirectoryName.trim()}
+                >
+                  Create
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <AlertDialog
+            open={showDeleteDirectoryDialog}
+            onOpenChange={setShowDeleteDirectoryDialog}
+          >
+            <AlertDialogContent className="bg-[#222] border-[#333] text-white">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+                <AlertDialogDescription className="text-gray-400">
+                  Are you sure you want to delete the directory "
+                  {directoryToDelete}"? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => {
+                    if (directoryToDelete) {
+                      rmDir(directoryToDelete);
+                      setDirectoryToDelete(null);
+                    }
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           <TooltipProvider>
             <Tooltip>
@@ -628,9 +765,24 @@ export default function NotionClone() {
           {/* Files/Directory List */}
           {directoryHandle !== undefined && (
             <div className="mb-8">
-              <div className="flex items-center gap-2 mb-4">
-                <Folders className="h-4 w-4" />
-                <span>Folders</span>
+              <div className="flex justify-between items-center mb-4 flex-grow-0">
+                <div className="flex items-center gap-2 mb-4">
+                  <Folders className="h-4 w-4" />
+                  <span>Folders</span>
+                </div>
+                <button
+                  className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl hover:bg-[#333] cursor-pointer transition text-xs h-8 bg-transparent text-gray-300 hover:text-white"
+                  onClick={() => {
+                    setShowNewDirectoryModal(true);
+                  }}
+                  disabled={
+                    directoryStack.length === 0 &&
+                    topDirectoryHandle === undefined
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">New Folder</span>
+                </button>
               </div>
               <div className="flex flex-wrap flex-row overflow-y-auto overscroll-auto max-w-3xl gap-2 mb-4 text-gray-400 text-nowrap">
                 {directoryHandle != topDirectoryHandle && (
@@ -648,14 +800,26 @@ export default function NotionClone() {
                 {directoryFolders.map((item) => {
                   return (
                     <div
-                      className="flex-shrink-0 flex-auto flex  justify-items-stretch items-center gap-2 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-content: space-between flex-grow"
+                      className="flex-shrink-0 flex-auto flex items-center gap-8 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-between flex-grow-0"
                       key={item.name}
                       onClick={() => {
                         pushDirectory(item.name);
                       }}
                     >
-                      <Folder className="h-4 w-4" />
-                      <span>{item.name}</span>
+                      <div className="flex items-center gap-2">
+                        <Folder className="h-4 w-4" />
+                        <span>{item.name}</span>
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-white transition flex-grow-0"
+                        onClick={(e) => {
+                          setDirectoryToDelete(item.name);
+                          setShowDeleteDirectoryDialog(true);
+                          e.stopPropagation();
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })}
@@ -665,7 +829,7 @@ export default function NotionClone() {
                   <File className="h-4 w-4" />
                   <span className="flex">Notebooks</span>
                 </div>
-                <div className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl text-gray-400 hover:bg-[#333] cursor-pointer transition">
+                <div className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl hover:bg-[#333] cursor-pointer transition text-xs h-8 bg-transparent text-gray-300 hover:text-white">
                   <FilePlus2 className="h-4 w-4" />
                   <Button
                     className="text-xs h-8 bg-transparent border-gray-600 text-gray-300 hover:bg-[#333] hover:text-white"
@@ -681,7 +845,7 @@ export default function NotionClone() {
                 {directoryNotebooks.map((item) => {
                   return (
                     <div
-                      className="flex-shrink-0 flex-auto flex  justify-items-stretch items-center gap-2 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-content: space-between flex-grow"
+                      className="flex-shrink-0 flex-auto flex items-center gap-8 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-between flex-grow-0"
                       key={item.name}
                       onClick={() => {
                         if (
@@ -692,8 +856,20 @@ export default function NotionClone() {
                         }
                       }}
                     >
-                      <FileText className="w-2rem h-2rem" />
-                      <span className="w-full text-center">{item.name}</span>
+                      <div className="flex items-center gap-2 flex-grow-0">
+                        <FileText className="w-2rem h-2rem" />
+                        <span className="text-center">{item.name}</span>
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-white transition flex-grow-0 mr-2"
+                        onClick={(e) => {
+                          setDirectoryToDelete(item.name + ".ncnb");
+                          setShowDeleteDirectoryDialog(true);
+                          e.stopPropagation();
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })}

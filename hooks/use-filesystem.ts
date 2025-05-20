@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { errorToast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
-import path from "path";
 
 // Declaration for the experimental showDirectoryPicker API
 declare const showDirectoryPicker: (
@@ -451,18 +450,22 @@ export function useFilesystem() {
 
   const createNewNotebook = useCallback(
     (name: string, notebookDescription: string) => {
+      if (directoryHandle === undefined) {
+        return Promise.reject("No directory handle set");
+      }
       directoryHandle
-        ?.getDirectoryHandle(name + ".ncnb")
+        .getDirectoryHandle(name + ".ncnb")
         .then(() => {
           errorToast({
             title: "Error creating Notebook",
             description:
               "This name already exists! Please try a different one.",
           });
+          return Promise.reject("Name already exists");
         })
         .catch(() => {
           let firstPageName = nanoid();
-          directoryHandle
+          return directoryHandle
             .getDirectoryHandle(name + ".ncnb", { create: true })
             .then((dirHandle) => {
               dirHandle
@@ -523,13 +526,84 @@ export function useFilesystem() {
                           stream.write(pageContent.toString("base64"));
                           stream.close();
                         });
+                    })
+                    .catch((err) => {
+                      errorToast({
+                        title: "Fehler beim Erstellen der Seite",
+                        description: err.message,
+                      });
+                      console.log(err);
+                      return Promise.reject(err);
                     });
                 })
                 .then(() => {
                   setNotebookDirectory(dirHandle);
                   updateDirectory();
+                  return dirHandle;
                 });
+            })
+            .catch((err) => {
+              errorToast({
+                title: "Fehler beim Erstellen des Verzeichnisses",
+                description: err.message,
+              });
+              console.log(err);
+              return Promise.reject(err);
             });
+        });
+    },
+    [directoryHandle]
+  );
+
+  const removeDirectory = useCallback(
+    (item: string, handle?: FileSystemDirectoryHandle) => {
+      if (handle === undefined) {
+        handle = directoryHandle;
+      }
+      if (handle === undefined) {
+        return Promise.reject("No handle provided/set");
+      }
+      return handle
+        .removeEntry(item, { recursive: true })
+        .then(() => {
+          updateDirectory();
+          return Promise.resolve();
+        })
+        .catch((err) => {
+          errorToast({
+            title: "Error removing item",
+            description:
+              "Something went wrong removing the item. Check the Console for details.",
+          });
+          console.log(err);
+          return Promise.reject(err);
+        });
+    },
+    [directoryHandle]
+  );
+
+  const createDirectory = useCallback(
+    (name: string, handle?: FileSystemDirectoryHandle) => {
+      if (handle === undefined) {
+        handle = directoryHandle;
+      }
+      if (handle === undefined) {
+        return Promise.reject("No handle provided/set");
+      }
+      return handle
+        .getDirectoryHandle(name, { create: true })
+        .then((dirHandle) => {
+          updateDirectory();
+          return dirHandle;
+        })
+        .catch((err) => {
+          errorToast({
+            title: "Error adding directory",
+            description:
+              "Something went wrong adding the directory. Check the Console for details.",
+          });
+          console.log(err);
+          return Promise.reject(err);
         });
     },
     [directoryHandle]
@@ -555,5 +629,7 @@ export function useFilesystem() {
     loadPage,
     savePage,
     createNewNotebook,
+    removeDirectory,
+    createDirectory,
   };
 }
