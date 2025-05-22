@@ -2,38 +2,45 @@
 
 import React, { useRef, useEffect, useState } from "react";
 
-const COLORS = {
+const COLORS: { [ key: string]: string} = {
   red: "#FF0000",
   green: "#00FF00",
   blue: "#0000FF",
 };
 
+type Stroke = {
+  points: [number, number, number][];
+  color: string;
+  width: number;
+}
+
 const INITIAL_STYLE = { colorName: "red", color: "#FF0000", diameter: 10 };
 
 function InkCanvas() {
-  const canvasRef = useRef(null);
-  const ctxRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
-  const canvasTwoRef = useRef(null);
-  const ct2Ref = useRef(null);
+  const canvasTwoRef = useRef<HTMLCanvasElement | null>(null);
+  const ct2Ref = useRef<CanvasRenderingContext2D | null>(null);
 
   const [style, setStyle] = useState({ ...INITIAL_STYLE });
   const [colorNames, setColorNames] = useState(Object.keys(COLORS));
   const [drawing, setDrawing] = useState(false);
   //const [lastPoint, setLastPoint] = useState(null);
-  const [points, setPoints] = useState([]);
-  const [page, setPage] = useState({ strokes: [] });
+  const [points, setPoints] = useState<[number, number, number][]>([]);
+  const [page, setPage] = useState<{strokes:Stroke[]}>({ strokes: [] });
   const [isZoom, setIsZoom] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
   const [onlyPen, setOnlyPen] = useState(true);
 
-  const lastPointRef = useRef(null);
+  const lastPointRef = useRef({x: -1, y: -1});
 
   const zoomSpeed = 20;
 
   // Canvas initialisieren und auf Fenstergröße reagieren
   useEffect(() => {
+    if (!canvasRef.current || !canvasTwoRef.current /* || !ctxRef.current */) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     ctxRef.current = ctx;
@@ -53,8 +60,8 @@ function InkCanvas() {
 
   // Ink-API Presenter anfordern (wenn verfügbar)
   useEffect(() => {
-    if ("ink" in navigator && navigator.ink.requestPresenter) {
-      navigator.ink.requestPresenter({ presentationArea: canvasRef.current }).then((p) => {
+    if ("ink" in navigator && (navigator.ink as any).requestPresenter) {
+      (navigator.ink as any).requestPresenter({ presentationArea: canvasRef.current }).then((p: any) => {
         setPresenter(p);
       });
     }
@@ -64,14 +71,15 @@ function InkCanvas() {
   useEffect(() => {
     const canvas = canvasRef.current;
 
-    const handlePointerDown = (evt) => {
+    const handlePointerDown = (evt: any) => {
       if (evt.pointerType !== "pen"  && onlyPen) return;
       setDrawing(true);
       /*setLastPoint*/lastPointRef.current ={ x: evt.offsetX, y: evt.offsetY };
       setPoints([]);
     };
 
-    const handlePointerMove = async (evt) => {
+    const handlePointerMove = async (evt: any) => {
+      if (!ctxRef.current) return;
       if (!drawing || evt.pointerType !== "pen" && onlyPen) return;
       const ctx = ctxRef.current;
       ctx.strokeStyle = style.color;
@@ -85,7 +93,7 @@ function InkCanvas() {
       setPoints((pts) => [...pts, [evt.offsetX, evt.offsetY, evt.pressure]]);
 
       if (presenter) {
-        await presenter.updateInkTrailStartPoint(evt, style);
+        await (presenter as any).updateInkTrailStartPoint(evt, style);
       }
     };
 
@@ -93,7 +101,7 @@ function InkCanvas() {
       if (!drawing) return;
       setDrawing(false);
       // setLastPoint(null);
-      lastPointRef.current = null;
+      lastPointRef.current = {x: -1, y: -1};
       setPage((prev) => ({
         strokes: [
           ...prev.strokes,
@@ -107,6 +115,7 @@ function InkCanvas() {
       setPoints([]);
     };
 
+    if (!canvas) return;
     canvas.addEventListener("pointerdown", handlePointerDown);
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
@@ -121,13 +130,14 @@ function InkCanvas() {
   // Zoom und Offset mit Mausrad
   useEffect(() => {
     const canvasTwo = canvasTwoRef.current;
-    const handleWheel = (event) => {
+    const handleWheel = (event: any) => {
       setOffset((prev) => ({
         x: prev.x + (event.deltaX < 0 ? zoomSpeed : event.deltaX > 0 ? -zoomSpeed : 0),
         y: prev.y + (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
       event.preventDefault();
     };
+    if (!canvasTwo) return
     canvasTwo.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvasTwo.removeEventListener("wheel", handleWheel);
   }, []);
@@ -138,11 +148,12 @@ function InkCanvas() {
     // eslint-disable-next-line
   }, [offset, isZoom, page]);
 
-  function calculateThickness(pressure) {
+  function calculateThickness(pressure: number) {
     return style.diameter * pressure;
   }
 
   function show() {
+    if (!ct2Ref.current || !canvasTwoRef.current) return;
     const ct2 = ct2Ref.current;
     const canvasTwo = canvasTwoRef.current;
     ct2.setTransform(1, 0, 0, 1, 0, 0);
@@ -152,7 +163,7 @@ function InkCanvas() {
     ct2.lineCap = "round";
     page.strokes.forEach((stroke) => {
       ct2.strokeStyle = stroke.color;
-      let lastpoints = null;
+      let lastpoints: any = null;
       stroke.points.forEach((j) => {
         if (lastpoints != null) {
           ct2.beginPath();
