@@ -1,28 +1,25 @@
-"use client"
+"use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+  useCallback,
+} from "react";
+import { NotesCode } from "../handwriting";
+import { useFilesystemContext } from "@/components/filesystem-provider";
 
 type Color = {
   [key: string]: string;
-}
+};
 
 const COLORS: Color = {
   red: "#FF0000",
   green: "#00FF00",
   blue: "#0000FF",
 };
-
-type Stroke = {
-  points: Point[];
-  color: string;
-  width: number;
-}
-
-type Point = {
-  x: number;
-  y: number;
-  pressure: number;
-}
 
 type CanvasProps = {
   defaultBackground?: string;
@@ -34,13 +31,38 @@ type CanvasProps = {
   strokeDiameter?: number;
   penInputOnly?: boolean;
   erasing?: boolean;
-}
+  setErasing?: React.Dispatch<React.SetStateAction<boolean>>; // Add setErase prop
+  pageID: string | undefined; // Add page prop
+  setPage?: React.Dispatch<React.SetStateAction<NotesCode.Document>>; // Add setPage prop
+};
 
-const INITIAL_STYLE = { colorName: "red", color: "#FF0000", diameter: 10, backgroundColor: "#222222" };
+// Define the type for the exposed methods
+export type InkOneCanvasRef = {
+  clearCanvas: () => void;
+  resetPosition: () => void;
+  increaseZoom: () => void;
+  decreaseZoom: () => void;
+  handleChangeColor: () => void;
+  handleOnlyPen: () => void;
+  toggleErase: () => void;
+  // Add other methods you might want to expose
+};
 
-function InkOneCanvas({
+const INITIAL_STYLE = {
+  colorName: "red",
+  color: "#FF0000",
+  diameter: 10,
+  backgroundColor: "#222222",
+};
+
+// Wrap the component with forwardRef
+const InkOneCanvas: React.ForwardRefRenderFunction<
+  InkOneCanvasRef,
+  CanvasProps
+> = (
+  {
     defaultBackground = INITIAL_STYLE.backgroundColor,
-    colors = COLORS, 
+    colors = COLORS,
     hideControls = false,
     width = 1000,
     height = 500,
@@ -48,29 +70,117 @@ function InkOneCanvas({
     strokeDiameter = 10,
     penInputOnly = true,
     erasing = false,
-  }: CanvasProps) {
+    pageID, // Accept page prop
+  }: CanvasProps,
+  ref: React.ForwardedRef<InkOneCanvasRef>
+) => {
+  // Use the custom filesystem hook
+  const {
+    directoryPickerAvailable,
+    topDirectoryHandle,
+    directoryFolders,
+    directoryNotebooks,
+    directoryHandle,
+    directoryStack,
+    notebookConfig,
+    notebookDirectory,
+    pagesDirectory,
+    imagesDirectory,
+    pages,
+    setDirectoryHandle,
+    setTopDirectoryHandle,
+    popDirectory,
+    pushDirectory,
+    openBook,
+    loadPage,
+    savePage,
+    createNewNotebook,
+    removeDirectory,
+    createDirectory,
+    setPages,
+    createPage,
+    reloadPages,
+    currentPage,
+    setCurrentPage,
+    deletePage,
+    strokeColor,
+    setStrokeColor,
+  } = useFilesystemContext();
+  // ref is the second argument
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
-  const [style, setStyle] = useState({ 
+  const [style, setStyle] = useState({
     colorName: Object.keys(colors)[0],
     color: colors[Object.keys(colors)[0]],
     diameter: strokeDiameter,
-    backgroundColor: defaultBackground
+    backgroundColor: defaultBackground,
   });
   const [drawing, setDrawing] = useState(false);
-  const [points, setPoints] = useState<Point[]>([]);
-  const [page, setPage] = useState<{strokes:Stroke[]}>({ strokes: [] });
+  const [points, setPoints] = useState<NotesCode.Point[]>([]);
+  // Remove internal page state: const [page, setPage] = useState<{strokes:Stroke[]}>({ strokes: [] });
   const [zoom, setZoom] = useState(initialZoom);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
   const [onlyPen, setOnlyPen] = useState(penInputOnly);
   const [erase, setErase] = useState(erasing);
+  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(undefined);
+  const [triggerShow, setTriggerShow] = useState(false);
 
-  const lastPointRef = useRef<{x: number, y: number} | null>(null);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
   const zoomSpeed = 20;
   const deleteRange = 1;
+
+  // Use useImperativeHandle to expose methods
+  useImperativeHandle(ref, () => ({
+    clearCanvas,
+    resetPosition,
+    increaseZoom,
+    decreaseZoom,
+    handleChangeColor,
+    handleOnlyPen,
+    toggleErase,
+    // Expose other functions here
+  }));
+
+  const setPage = useCallback(
+    (page: NotesCode.Document) => {
+      // debugger;
+      if (!currentPage || !pages) return;
+      let newPages = structuredClone(pages);
+      if (!newPages) return;
+      newPages.set(currentPage, page);
+      setPages(newPages);
+    },
+    [currentPage, pages]
+  );
+
+  useEffect(() => {
+    if (!currentPage || !pages) return;
+    let page = pages.get(currentPage);
+    if (!page) return;
+    setPageDoc(page);
+  }, [currentPage, pages]);
+
+  useEffect(() => {
+    setStyle((prev) => ({
+      ...prev,
+      colorName: strokeColor,
+      color: strokeColor,
+    }));
+  }, [strokeColor]);
+
+  useEffect(() => {
+    console.log("Pages:", pages);
+    console.log("Current Page:", currentPage);
+    console.log("Page Doc:", page);
+  }, [pages, currentPage, page]);
+
+  function erasePage() {
+    if (!setPage) return;
+    setPage(new NotesCode.Document({ strokes: [] }));
+  }
 
   // Canvas initialisieren und auf Fenstergröße reagieren
   useEffect(() => {
@@ -87,7 +197,9 @@ function InkOneCanvas({
 
         // Setze die Größe des Canvas basierend auf der Größe des Containers
         canvas.width = Math.min(containerWidth, width, window.innerWidth);
-        canvas.height = Math.min(containerHeight, height, window.innerHeight) - Number(!hideControls) * 30;
+        canvas.height =
+          Math.min(containerHeight, height, window.innerHeight) -
+          Number(!hideControls) * 30;
       }
     };
     handleResize();
@@ -98,9 +210,11 @@ function InkOneCanvas({
   // Ink-API Presenter anfordern (wenn verfügbar)
   useEffect(() => {
     if ("ink" in navigator && (navigator.ink as any).requestPresenter) {
-      (navigator.ink as any).requestPresenter({ presentationArea: canvasRef.current }).then((p: any) => {
-        setPresenter(p);
-      });
+      (navigator.ink as any)
+        .requestPresenter({ presentationArea: canvasRef.current })
+        .then((p: any) => {
+          setPresenter(p);
+        });
     }
   }, []);
 
@@ -109,7 +223,7 @@ function InkOneCanvas({
     const canvas = canvasRef.current;
 
     const handlePointerDown = (evt: any) => {
-      if (evt.pointerType !== "pen"  && onlyPen) return;
+      if (evt.pointerType !== "pen" && onlyPen) return;
       setDrawing(true);
       lastPointRef.current = {
         x: (evt.offsetX - offset.x) / zoom,
@@ -120,54 +234,69 @@ function InkOneCanvas({
 
     const handlePointerMove = async (evt: any) => {
       if (!ctxRef.current) return;
-      if (!drawing || evt.pointerType !== "pen" && onlyPen) return;
+      if (!drawing || (evt.pointerType !== "pen" && onlyPen)) return;
       const ctx = ctxRef.current;
       ctx.globalAlpha = erase ? 0.5 : 1;
       ctx.strokeStyle = style.color;
-      ctx.lineWidth = evt.pointerType === "touch" ? calculateThickness(0.5) : calculateThickness(evt.pressure);
+      ctx.lineWidth =
+        evt.pointerType === "touch"
+          ? calculateThickness(0.5)
+          : calculateThickness(evt.pressure);
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(lastPointRef.current!.x, lastPointRef.current!.y );
-      ctx.lineTo((evt.offsetX - offset.x) / zoom, (evt.offsetY - offset.y) / zoom);
+      ctx.moveTo(lastPointRef.current!.x, lastPointRef.current!.y);
+      ctx.lineTo(
+        (evt.offsetX - offset.x) / zoom,
+        (evt.offsetY - offset.y) / zoom
+      );
       ctx.stroke();
-      
-      lastPointRef.current = { 
-        x: ( evt.offsetX - offset.x ) / zoom , 
-        y: ( evt.offsetY - offset.y ) / zoom 
+
+      lastPointRef.current = {
+        x: (evt.offsetX - offset.x) / zoom,
+        y: (evt.offsetY - offset.y) / zoom,
       };
-      setPoints((pts) => [...pts, {
-        x:(evt.offsetX - offset.x) / zoom,
-        y: (evt.offsetY - offset.y ) / zoom,
-        pressure: evt.pointerType === "touch" ? 0.5: evt.pressure
-      }]);
+      setPoints((pts) => [
+        ...pts,
+        new NotesCode.Point({
+          x: (evt.offsetX - offset.x) / zoom,
+          y: (evt.offsetY - offset.y) / zoom,
+          pressure: evt.pointerType === "touch" ? 0.5 : evt.pressure,
+        }),
+      ]);
       if (presenter) {
         await (presenter as any).updateInkTrailStartPoint(evt, style);
       }
     };
 
     const handlePointerUp = () => {
-      if (!drawing) return;
       setDrawing(false);
+      console.log(drawing, pages, currentPage, page);
+      if (!drawing || !pages || !currentPage || !page) return;
       lastPointRef.current = null;
-      if (!erase){
-        setPage((prev) => ({
-          strokes: [
-            ...prev.strokes,
-            {
-              points: points,
-              color: style.color,
-              width: style.diameter,
-            },
-          ],
-        }));
+      if (!erase) {
+        let prev = pages.get(currentPage);
+        if (!prev) return;
+        setPage(
+          new NotesCode.Document({
+            strokes: [
+              ...prev.strokes,
+              new NotesCode.Stroke({
+                points: points,
+                color: style.color,
+                width: style.diameter,
+              }),
+            ],
+          })
+        );
       } else {
         const deleteRadius = 10; // oder abhängig vom Pressure/Style
         const newStrokes = page.strokes.filter((stroke) => {
+          // Use page prop
           // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
-          const isNearEraser = stroke.points.some((p) =>
+          const isNearEraser = stroke?.points?.some((p) =>
             points.some((d) => {
-              const dx = p.x - d.x;
-              const dy = p.y - d.y;
+              const dx = p.x || 0 - d.x;
+              const dy = p.y || 0 - d.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
               return distance < deleteRadius;
             })
@@ -175,9 +304,10 @@ function InkOneCanvas({
           return !isNearEraser;
         });
 
-        setPage({ strokes: newStrokes });
-      
+        setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
+
         show();
+        setTriggerShow(true);
       }
       setPoints([]);
     };
@@ -192,36 +322,49 @@ function InkOneCanvas({
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [drawing, lastPointRef.current, style, presenter, points, onlyPen, offset, erase]);
+  }, [
+    drawing,
+    lastPointRef.current,
+    style,
+    presenter,
+    points,
+    onlyPen,
+    offset,
+    erase,
+  ]);
 
   // Zoom und Offset mit Mausrad
   useEffect(() => {
     const canvas = canvasRef.current;
     const handleWheel = (event: any) => {
       setOffset((prev) => ({
-        x: prev.x + (event.deltaX < 0 ? zoomSpeed : event.deltaX > 0 ? -zoomSpeed : 0),
-        y: prev.y + (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
+        x:
+          prev.x +
+          (event.deltaX < 0 ? zoomSpeed : event.deltaX > 0 ? -zoomSpeed : 0),
+        y:
+          prev.y +
+          (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
-      show();
+      setTriggerShow(true);
       event.preventDefault();
     };
-    if (!canvas) return
+    if (!canvas) return;
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, []);
 
   // Offset-Änderung triggert show()
   useEffect(() => {
-    show();
+    setTriggerShow(true);
     // eslint-disable-next-line
-  }, [offset, zoom, page]);
+  }, [offset, zoom, pages, currentPage]); // Add page to dependencies
 
   function calculateThickness(pressure: number) {
     return style.diameter * pressure;
   }
 
-  function show() {
-    if (!ctxRef.current || !canvasRef.current) return;
+  const show = useCallback(() => {
+    if (!ctxRef.current || !canvasRef.current || !page) return;
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
     ctx.globalAlpha = 1;
@@ -230,20 +373,20 @@ function InkOneCanvas({
     ctx.setTransform(zoom, 0, 0, zoom, offset.x, offset.y);
     ctx.lineCap = "round";
     page.strokes.forEach((stroke) => {
-      ctx.strokeStyle = stroke.color;
+      ctx.strokeStyle = stroke.color || "#000000";
       let lastpoints: any = null;
-      stroke.points.forEach((j) => {
+      stroke?.points?.forEach((j) => {
         if (lastpoints != null) {
           ctx.beginPath();
-          ctx.lineWidth = calculateThickness(j.pressure);
+          ctx.lineWidth = calculateThickness(j.pressure || 1);
           ctx.moveTo(lastpoints.x, lastpoints.y);
-          ctx.lineTo(j.x, j.y);
+          ctx.lineTo(j.x || 0, j.y || 0);
           ctx.stroke();
         }
         lastpoints = { x: j.x, y: j.y };
       });
     });
-  }
+  }, [page]);
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
@@ -253,17 +396,26 @@ function InkOneCanvas({
     if (zoom - 0.25 > 0) setZoom((prev) => prev - 0.25);
   }
 
-  function handleChangeColor() {
-    // Zyklisch durch die Farben wechseln
-    const currentColorIndex = Object.keys(colors).indexOf(style.colorName);
-    const colorNames = Object.keys(colors);  // Hole alle Farbnamen aus dem colors-Objekt
-    const nextColorIndex = (currentColorIndex + 1) % colorNames.length;  // Nächster Farbnamen-Index, zyklisch
-    const nextColorName = colorNames[nextColorIndex];
-    setStyle((prev) => ({
-      ...prev,
-      color: colors[nextColorName], // Setze die neue Farbe aus dem colors-Objekt
-      colorName: nextColorName,      // Setze den neuen Farbnamen
-    }));
+  function handleChangeColor(stringColor?: string) {
+    if (stringColor) { 
+      setStyle((prev) => ({
+        ...prev,
+        color: stringColor,
+        colorName: stringColor,
+      }));
+      return;
+    } else {
+      // Zyklisch durch die Farben wechseln
+      const currentColorIndex = Object.keys(colors).indexOf(style.colorName);
+      const colorNames = Object.keys(colors); // Hole alle Farbnamen aus dem colors-Objekt
+      const nextColorIndex = (currentColorIndex + 1) % colorNames.length; // Nächster Farbnamen-Index, zyklisch
+      const nextColorName = colorNames[nextColorIndex];
+      setStyle((prev) => ({
+        ...prev,
+        color: colors[nextColorName], // Setze die neue Farbe aus dem colors-Objekt
+        colorName: nextColorName, // Setze den neuen Farbnamen
+      }));
+    }
   }
 
   function handleOnlyPen() {
@@ -274,23 +426,23 @@ function InkOneCanvas({
   function clearCanvas() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
-    if(!canvas || !ctx) return;
-    ctx.clearRect(0,0,canvas.width, canvas.height)
-    page.strokes = [];
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    erasePage();
   }
 
   function resetPosition() {
     setZoom(1);
-    setOffset({x: 0, y: 1});
-    show();
+    setOffset({ x: 0, y: 1 });
+    setTriggerShow(true);
   }
 
-  function toggleErase(){
+  function toggleErase() {
     setErase((prev) => !prev);
   }
 
   useEffect(() => {
-    setZoom(initialZoom)
+    setZoom(initialZoom);
   }, [initialZoom]);
 
   useEffect(() => {
@@ -302,11 +454,21 @@ function InkOneCanvas({
       colorName: Object.keys(colors)[0],
       color: colors[Object.keys(colors)[0]],
       diameter: strokeDiameter,
-      backgroundColor: defaultBackground 
+      backgroundColor: defaultBackground,
     }));
   }, [colors]);
 
-  
+  useEffect(() => {
+    if (triggerShow) {
+      show();
+      setTriggerShow(false);
+    }
+  }, [triggerShow]);
+
+  useEffect(() => {
+    setErase(erasing);
+  }, [erasing]);
+
   return (
     <div>
       <canvas
@@ -316,24 +478,43 @@ function InkOneCanvas({
         style={{ display: "block", background: defaultBackground }}
       />
       {/* <button onClick={handleShow}>Anzeigen</button> */}
-      { hideControls ? <div/>: <div><button onClick={increaseZoom}>Reinzoomen</button>
-      <button onClick={decreaseZoom}>Herauszoomen</button>
-      <button
-        onClick={handleChangeColor}
-        style={{ backgroundColor: style.color, color: defaultBackground, marginLeft: 8 }}
-      >
-        {style.colorName}
-      </button>
-      <button 
-        onClick={handleOnlyPen} 
-        style={{color: onlyPen ? "#00FF00": "#FF0000"}}>
-          {onlyPen ? "Nur Stifteingaben akzeptieren": "Alle Eingaben akzeptieren"}
+      {hideControls ? (
+        <div />
+      ) : (
+        <div>
+          <button onClick={increaseZoom}>Reinzoomen</button>
+          <button onClick={decreaseZoom}>Herauszoomen</button>
+          <button
+          //@ts-expect-error
+            onClick={handleChangeColor}
+            style={{
+              backgroundColor: style.color,
+              color: defaultBackground,
+              marginLeft: 8,
+            }}
+          >
+            {style.colorName}
           </button>
-      <button onClick={clearCanvas}>Canvas leeren</button>
-      <button onClick={resetPosition}>Position zurücksetzen</button>
-      <button onClick={toggleErase} style={{color: erase ? "#FF0000" : "#00FF00"}}>{erase ? "Radieren": "Zeichnen"}</button></div>}
+          <button
+            onClick={handleOnlyPen}
+            style={{ color: onlyPen ? "#00FF00" : "#FF0000" }}
+          >
+            {onlyPen
+              ? "Nur Stifteingaben akzeptieren"
+              : "Alle Eingaben akzeptieren"}
+          </button>
+          <button onClick={clearCanvas}>Canvas leeren</button>
+          <button onClick={resetPosition}>Position zurücksetzen</button>
+          <button
+            onClick={toggleErase}
+            style={{ color: erase ? "#FF0000" : "#00FF00" }}
+          >
+            {erase ? "Radieren" : "Zeichnen"}
+          </button>
+        </div>
+      )}
     </div>
   );
-}
+};
 
-export default InkOneCanvas;
+export default forwardRef(InkOneCanvas); // Export the forwarded component

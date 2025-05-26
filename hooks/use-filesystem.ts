@@ -35,6 +35,10 @@ export function useFilesystem() {
     }
   }, []);
 
+  
+  const [showCanvasEditor, setShowCanvasEditor] = useState(false);
+  const [strokeColor, setStrokeColor] = useState<string>("#000000");
+  const [erasing, setErasing] = useState<boolean>(false);
   // State to trigger a reload of the currently active pages
   const [toReloadPages, setToReloadPages] = useState<boolean>(false);
 
@@ -1054,6 +1058,7 @@ export function useFilesystem() {
     createNewNotebook,
     removeDirectory,
     createDirectory,
+    setPages,
     createPage,
     savePages,
     reloadPages,
@@ -1061,5 +1066,12 @@ export function useFilesystem() {
     deletePage,
     getPagesInOrder,
     setToReloadPages,
+    unloadNotebook,
+    showCanvasEditor, 
+    setShowCanvasEditor,
+    strokeColor,
+    setStrokeColor,
+    erasing,
+    setErasing,
   };
 }

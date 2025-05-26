@@ -67,8 +67,10 @@ import {
 } from "@/components/ui/tooltip";
 
 import { NotesCode } from "../handwriting";
-import { useToast, toast, errorToast } from "../hooks/use-toast";
+import { useToast, toast, errorToast } from "@/hooks/use-toast";
 import { useFilesystem } from "../hooks/use-filesystem";
+import CanvasEditorView from "../components/CanvasEditorView";
+import { useFilesystemContext, FilesystemProvider } from "@/components/filesystem-provider";
 
 export default function NotionClone() {
   // State management
@@ -92,7 +94,7 @@ export default function NotionClone() {
   );
   const [deletePageName, setDeletePageName] = useState<String>("");
 
-  // Use the custom filesystem hook
+  // Use the custom filesystem context
   const {
     directoryPickerAvailable,
     topDirectoryHandle,
@@ -120,7 +122,9 @@ export default function NotionClone() {
     currentPage,
     setCurrentPage,
     deletePage,
-  } = useFilesystem();
+    showCanvasEditor, 
+    setShowCanvasEditor
+  } = useFilesystemContext();
 
   // Current date and time for greeting
   const currentDate = new Date();
@@ -325,6 +329,19 @@ export default function NotionClone() {
       date: "May 7",
     },
   ];
+
+  // When a notebook is opened, show the canvas editor
+  useEffect(() => {
+    if (notebookDirectory) {
+      setShowCanvasEditor(true);
+    } else {
+      setShowCanvasEditor(false);
+    }
+  }, [notebookDirectory]);
+
+  if (showCanvasEditor) {
+    return <CanvasEditorView/>;
+  }
 
   return (
     <div className="flex h-screen bg-[#191919] text-white">
