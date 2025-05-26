@@ -33,6 +33,7 @@ type CanvasProps = {
   initialZoom?: number;
   strokeDiameter?: number;
   penInputOnly?: boolean;
+  erasing?: boolean;
 }
 
 const INITIAL_STYLE = { colorName: "red", color: "#FF0000", diameter: 10, backgroundColor: "#222222" };
@@ -46,6 +47,7 @@ function InkOneCanvas({
     initialZoom = 1,
     strokeDiameter = 10,
     penInputOnly = true,
+    erasing = false,
   }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -63,7 +65,7 @@ function InkOneCanvas({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
   const [onlyPen, setOnlyPen] = useState(penInputOnly);
-  const [erase, setErase] = useState(false);
+  const [erase, setErase] = useState(erasing);
 
   const lastPointRef = useRef<{x: number, y: number} | null>(null);
 
