@@ -128,7 +128,7 @@ export default function CanvasEditorView() {
   };
 
   const savePageHandler = () => {
-    debugger;
+    //debugger;
     if (currentPage === undefined) return;
     savePage(currentPage);
   };
@@ -297,7 +297,8 @@ export default function CanvasEditorView() {
                 height={500}
                 initialZoom={1}
                 strokeDiameter={10}
-                penInputOnly={false}
+                penInputOnly={true}
+                colors={{"hallo": strokeColor}}
               />
             </div>
           </div>

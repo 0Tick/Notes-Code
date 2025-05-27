@@ -126,6 +126,7 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
   const [erase, setErase] = useState(erasing);
   const [page, setPageDoc] = useState<NotesCode.Document | undefined>(undefined);
   const [triggerShow, setTriggerShow] = useState(false);
+  const [renderShow, setRenderShow] = useState(0);
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -295,8 +296,8 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
           // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
           const isNearEraser = stroke?.points?.some((p) =>
             points.some((d) => {
-              const dx = p.x || 0 - d.x;
-              const dy = p.y || 0 - d.y;
+              const dx = (p.x || 0) - d.x;
+              const dy = (p.y || 0) - d.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
               return distance < deleteRadius;
             })
@@ -308,6 +309,7 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
 
         show();
         setTriggerShow(true);
+        setRenderShow((prev) => prev + 1);
       }
       setPoints([]);
     };
@@ -346,16 +348,18 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
           (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
       setTriggerShow(true);
+      setRenderShow((prev) => prev + 1);
       event.preventDefault();
     };
     if (!canvas) return;
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [offset]);
 
   // Offset-Änderung triggert show()
   useEffect(() => {
     setTriggerShow(true);
+    setRenderShow((prev) => prev + 1);
     // eslint-disable-next-line
   }, [offset, zoom, pages, currentPage]); // Add page to dependencies
 
@@ -386,7 +390,7 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
         lastpoints = { x: j.x, y: j.y };
       });
     });
-  }, [page]);
+  }, [page, offset]);
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
@@ -435,6 +439,7 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
     setZoom(1);
     setOffset({ x: 0, y: 1 });
     setTriggerShow(true);
+    setRenderShow((prev) => prev + 1);
   }
 
   function toggleErase() {
@@ -463,7 +468,7 @@ const InkOneCanvas: React.ForwardRefRenderFunction<
       show();
       setTriggerShow(false);
     }
-  }, [triggerShow]);
+  }, [triggerShow, renderShow]);
 
   useEffect(() => {
     setErase(erasing);
