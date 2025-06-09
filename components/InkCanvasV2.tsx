@@ -49,6 +49,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     penInputOnly = true,
     erasing = false,
     pageID, // Accept page prop
+    defaultBackground="#FFFFFF"
   }: CanvasProps,
   ref: React.ForwardedRef<InkCanvasV2Ref>
 ) => {
@@ -91,7 +92,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [style, setStyle] = useState({
     color: strokeColor,
     diameter: strokeDiameter,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: defaultBackground,
   });
   const [drawing, setDrawing] = useState(false);
   const [points, setPoints] = useState<NotesCode.Point[]>([]);
