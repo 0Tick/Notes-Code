@@ -10,7 +10,7 @@ import {
   Dispatch,
 } from "react";
 import { useFilesystem } from "@/hooks/use-filesystem";
-import InkOneCanvas, { InkOneCanvasRef } from "./InkOneCanvas";
+import InkCanvasV2, { InkCanvasV2Ref } from "./InkCanvasV2";
 import { NotesCode } from "@/handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
 import { PopoverPicker } from "@/components/popOverPicker";
@@ -51,7 +51,7 @@ export default function CanvasEditorView() {
     strokeColor,
     setStrokeColor,
   } = useFilesystemContext();
-  const canvasRef: React.Ref<InkOneCanvasRef | undefined> = useRef(undefined);
+  const canvasRef: React.Ref<InkCanvasV2Ref | undefined> = useRef(undefined);
   const addPageBtnRef = useRef<HTMLButtonElement>(null);
   const addPageDropdownRef = useRef<HTMLDivElement>(null);
   const [isNotesAppVisible, setIsNotesAppVisible] = useState(true);
@@ -287,18 +287,15 @@ export default function CanvasEditorView() {
           </div>
           <div className="viewport bg-zinc-700/30 border border-zinc-600 rounded-md mb-0 flex flex-col flex-grow">
             <div className="page-content flex-grow p-2.5 flex flex-col">
-              <InkOneCanvas
-                ref={canvasRef as React.Ref<InkOneCanvasRef>}
+              <InkCanvasV2
+                ref={canvasRef as React.Ref<InkCanvasV2Ref>}
                 pageID={currentPage}
                 erasing={erasing}
                 defaultBackground="#222222"
-                hideControls={true}
                 width={1000}
                 height={500}
-                initialZoom={1}
                 strokeDiameter={10}
                 penInputOnly={true}
-                colors={{"hallo": strokeColor}}
               />
             </div>
           </div>
