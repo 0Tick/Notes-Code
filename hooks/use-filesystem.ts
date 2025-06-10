@@ -35,7 +35,6 @@ export function useFilesystem() {
     }
   }, []);
 
-  
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
   const [strokeColor, setStrokeColor] = useState<string>("#000000");
   const [erasing, setErasing] = useState<boolean>(false);
@@ -379,31 +378,31 @@ export function useFilesystem() {
           return pageHandle.getFile();
         })
         .then((file) => {
-          return new Promise((resolve: (value: string) => void, reject) => {
-            const reader = new FileReader();
+          return new Promise(
+            (resolve: (value: ArrayBuffer) => void, reject) => {
+              const reader = new FileReader();
 
-            // Handle successful load
-            reader.onload = (e) => {
-              if (typeof reader.result === "string") {
-                resolve(reader.result);
-              } else {
-                reject(new Error("Unexpected result type"));
-              }
-            };
+              // Handle successful load
+              reader.onload = (e) => {
+                if (typeof reader.result === "object") {
+                  resolve(reader.result as ArrayBuffer);
+                } else {
+                  reject(new Error("Unexpected result type"));
+                }
+              };
 
-            // Handle errors
-            reader.onerror = () => {
-              reject(reader.error || new Error("File reading failed"));
-            };
+              // Handle errors
+              reader.onerror = () => {
+                reject(reader.error || new Error("File reading failed"));
+              };
 
-            // Initiate reading
-            reader.readAsText(file);
-          });
+              // Initiate reading
+              reader.readAsArrayBuffer(file);
+            }
+          );
         })
         .then((result) => {
-          let pageContent = NotesCode.Document.decode(
-            new Uint8Array(Buffer.from(result, "base64"))
-          );
+          let pageContent = NotesCode.Document.decode(new Uint8Array(result));
           if (updatePages) {
             let newPages = new Map<string, NotesCode.Document>(customPages);
             newPages.set(page, pageContent);
@@ -436,10 +435,8 @@ export function useFilesystem() {
           if (doc === undefined) {
             return Promise.reject(`Page '${page}' not found`);
           }
-          let pageContent = Buffer.from(
-            NotesCode.Document.encode(doc).finish()
-          );
-          writable.write(pageContent.toString("base64"));
+          let pageContent = NotesCode.Document.encode(doc).finish();
+          writable.write(pageContent);
           return writable.close();
         })
         .then(() => {
@@ -658,10 +655,10 @@ export function useFilesystem() {
                   });
                 })
                 .then((stream) => {
-                  let pageContent = Buffer.from(
-                    NotesCode.Document.encode(new NotesCode.Document()).finish()
-                  );
-                  stream.write(pageContent.toString("base64"));
+                  let pageContent = NotesCode.Document.encode(
+                    new NotesCode.Document()
+                  ).finish();
+                  stream.write(pageContent);
                   return stream.close();
                 })
                 .then(() => {
@@ -776,10 +773,10 @@ export function useFilesystem() {
           });
         })
         .then((stream) => {
-          let pageContent = Buffer.from(
-            NotesCode.Document.encode(new NotesCode.Document()).finish()
-          );
-          stream.write(pageContent.toString("base64"));
+          let pageContent = NotesCode.Document.encode(
+            new NotesCode.Document()
+          ).finish();
+          stream.write(pageContent);
           return stream.close();
         })
         .then(() => {
@@ -1067,7 +1064,7 @@ export function useFilesystem() {
     getPagesInOrder,
     setToReloadPages,
     unloadNotebook,
-    showCanvasEditor, 
+    showCanvasEditor,
     setShowCanvasEditor,
     strokeColor,
     setStrokeColor,
