@@ -260,7 +260,7 @@ export default function CanvasEditorView() {
               title="Clear Page"
               className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
             >
-              &#x1F5D8;
+              🧽
             </button>
             <PopoverPicker
               color={strokeColor}
@@ -295,7 +295,8 @@ export default function CanvasEditorView() {
                 width={1000}
                 height={500}
                 strokeDiameter={10}
-                penInputOnly={true}
+                penInputOnly={false}
+                colors={{"hallo": strokeColor}}
               />
             </div>
           </div>
