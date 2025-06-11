@@ -369,7 +369,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
-    console.log(zoom);
   }
 
   function decreaseZoom() {
