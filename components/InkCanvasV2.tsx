@@ -247,7 +247,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
 
     const handlePointerUp = () => {
       setDrawing(false);
-      console.log(drawing, pages, currentPage, page);
       if (!drawing || !pages || !currentPage || !page) return;
       lastPointRef.current = null;
       if (!erase) {
