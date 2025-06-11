@@ -296,7 +296,6 @@ export default function CanvasEditorView() {
                 height={500}
                 strokeDiameter={10}
                 penInputOnly={false}
-                colors={{"hallo": strokeColor}}
               />
             </div>
           </div>
