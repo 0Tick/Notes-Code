@@ -30,6 +30,7 @@ import {
   FilePlus2,
   File,
   Folders,
+  FolderPlus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -48,6 +49,17 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -55,8 +67,10 @@ import {
 } from "@/components/ui/tooltip";
 
 import { NotesCode } from "../handwriting";
-import { useToast, toast, errorToast } from "../hooks/use-toast";
+import { useToast, toast, errorToast } from "@/hooks/use-toast";
 import { useFilesystem } from "../hooks/use-filesystem";
+import CanvasEditorView from "../components/CanvasEditorView";
+import { useFilesystemContext, FilesystemProvider } from "@/components/filesystem-provider";
 
 export default function NotionClone() {
   // State management
@@ -71,8 +85,16 @@ export default function NotionClone() {
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookDescription, setNewNotebookDescription] = useState("");
   const [showNewNotebookModal, setShowNewNotebookModal] = useState(false);
+  const [showNewDirectoryModal, setShowNewDirectoryModal] = useState(false);
+  const [newDirectoryName, setNewDirectoryName] = useState("");
+  const [showDeleteDirectoryDialog, setShowDeleteDirectoryDialog] =
+    useState(false);
+  const [directoryToDelete, setDirectoryToDelete] = useState<string | null>(
+    null
+  );
+  const [deletePageName, setDeletePageName] = useState<String>("");
 
-  // Use the custom filesystem hook
+  // Use the custom filesystem context
   const {
     directoryPickerAvailable,
     topDirectoryHandle,
@@ -93,7 +115,16 @@ export default function NotionClone() {
     loadPage,
     savePage,
     createNewNotebook,
-  } = useFilesystem();
+    removeDirectory,
+    createDirectory,
+    createPage,
+    reloadPages,
+    currentPage,
+    setCurrentPage,
+    deletePage,
+    showCanvasEditor, 
+    setShowCanvasEditor
+  } = useFilesystemContext();
 
   // Current date and time for greeting
   const currentDate = new Date();
@@ -154,11 +185,19 @@ export default function NotionClone() {
   }, []);
 
   const createNewPage = useCallback(() => {
-    if (newPageTitle.trim()) {
+    if (newPageTitle) {
       // In a real app, we would create the page here
-      console.log("Creating new page:", newPageTitle);
-      setNewPageTitle("");
-      setShowNewPageModal(false);
+      console.log("Creating new page with insert mode:", newPageTitle);
+      createPage(undefined, {
+        //@ts-expect-error
+        insert: newPageTitle,
+        width: 800,
+        height: 600,
+        background: "default",
+      }).then(() => {
+        setNewPageTitle("");
+        setShowNewPageModal(false);
+      });
     }
   }, [newPageTitle]);
 
@@ -168,7 +207,6 @@ export default function NotionClone() {
 
   const createNotebook = useCallback(() => {
     if (newNotebookName.trim()) {
-      // In a real app, we would create the notebook here
       console.log("Creating new notebook:", newNotebookName);
       setNewNotebookName("");
       setNewNotebookDescription("");
@@ -176,6 +214,39 @@ export default function NotionClone() {
       createNewNotebook(newNotebookName, "Notebook Description");
     }
   }, [newNotebookName]);
+
+  const rmDir = useCallback(
+    async (name: string) => {
+      if (directoryHandle === undefined) {
+        errorToast({
+          title: "Failed to delete directory",
+          description: "Directory handle is not defined",
+        });
+        return Promise.reject();
+      }
+
+      removeDirectory(name).then(() => {
+        toast({
+          title: "Directory deleted",
+          description: `The directory "${name}" has been deleted.`,
+        });
+      });
+    },
+    [directoryHandle, toast, errorToast]
+  );
+
+  const openNewDirectoryModal = useCallback(() => {
+    setShowNewDirectoryModal(true);
+  }, []);
+
+  const createDir = useCallback(() => {
+    if (newDirectoryName.trim()) {
+      console.log("Creating new directory:", newDirectoryName);
+      createDirectory(newDirectoryName);
+      setNewDirectoryName("");
+      setShowNewDirectoryModal(false);
+    }
+  }, [newDirectoryName]);
 
   // Recently visited pages data
   const recentPages = [
@@ -258,6 +329,19 @@ export default function NotionClone() {
       date: "May 7",
     },
   ];
+
+  // When a notebook is opened, show the canvas editor
+  useEffect(() => {
+    if (notebookDirectory) {
+      setShowCanvasEditor(true);
+    } else {
+      setShowCanvasEditor(false);
+    }
+  }, [notebookDirectory]);
+
+  if (showCanvasEditor) {
+    return <CanvasEditorView/>;
+  }
 
   return (
     <div className="flex h-screen bg-[#191919] text-white">
@@ -493,17 +577,44 @@ export default function NotionClone() {
               <DialogHeader>
                 <DialogTitle>Create a new page</DialogTitle>
                 <DialogDescription className="text-gray-400">
-                  Give your page a title. You can change this at any time.
+                  Insert a page.
                 </DialogDescription>
               </DialogHeader>
-              <div className="py-4">
-                <Input
-                  placeholder="Untitled"
-                  className="bg-[#333] border-[#444] text-white focus-visible:ring-[#555]"
-                  value={newPageTitle}
-                  onChange={(e) => setNewPageTitle(e.target.value)}
-                  autoFocus
-                />
+              <div className="py-4 flex flex-grow">
+                <DropdownMenu
+                >
+                  <DropdownMenuTrigger asChild>
+                    <Button className="bg-[#333] text-white hover:bg-[#444]">
+                      Select Position
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-[#333] border-[#444] text-white">
+                    <DropdownMenuItem
+                      onClick={() => setNewPageTitle("first")}
+                      className="hover:bg-[#444] cursor-pointer"
+                    >
+                      First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setNewPageTitle("last")}
+                      className="hover:bg-[#444] cursor-pointer"
+                    >
+                      Last
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setNewPageTitle("before")}
+                      className="hover:bg-[#444] cursor-pointer"
+                    >
+                      Before
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setNewPageTitle("after")}
+                      className="hover:bg-[#444] cursor-pointer"
+                    >
+                      After
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -582,6 +693,89 @@ export default function NotionClone() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <Dialog
+            open={showNewDirectoryModal}
+            onOpenChange={setShowNewDirectoryModal}
+          >
+            <DialogTrigger asChild>
+              <div
+                className={`flex items-center gap-2 text-gray-400 hover:text-white cursor-pointer transition ${
+                  sidebarCollapsed ? "justify-center" : ""
+                }`}
+                onClick={openNewDirectoryModal}
+              >
+                <FolderPlus className="h-4 w-4" />
+                {!sidebarCollapsed && (
+                  <span className="text-sm">New Folder</span>
+                )}
+              </div>
+            </DialogTrigger>
+            <DialogContent className="bg-[#222] border-[#333] text-white">
+              <DialogHeader>
+                <DialogTitle>Create a new folder</DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Give your folder a name.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <Input
+                  placeholder="Untitled Folder"
+                  className="bg-[#333] border-[#444] text-white focus-visible:ring-[#555]"
+                  value={newDirectoryName}
+                  onChange={(e) => setNewDirectoryName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button
+                    variant="outline"
+                    className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white"
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button
+                  className="bg-white text-black hover:bg-gray-200"
+                  onClick={createDir}
+                  disabled={!newDirectoryName.trim()}
+                >
+                  Create
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <AlertDialog
+            open={showDeleteDirectoryDialog}
+            onOpenChange={setShowDeleteDirectoryDialog}
+          >
+            <AlertDialogContent className="bg-[#222] border-[#333] text-white">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+                <AlertDialogDescription className="text-gray-400">
+                  Are you sure you want to delete the directory "
+                  {directoryToDelete}"? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => {
+                    if (directoryToDelete) {
+                      rmDir(directoryToDelete);
+                      setDirectoryToDelete(null);
+                    }
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           <TooltipProvider>
             <Tooltip>
@@ -605,7 +799,7 @@ export default function NotionClone() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-8">
           <h1 className="text-3xl font-bold mb-8">{greeting}, Selo Inan</h1>
-          {directoryPickerAvailable && showDirectoryPicker !== undefined && (
+          { directoryPickerAvailable && showDirectoryPicker !== undefined && (
             <>
               <Button
                 onClick={() =>
@@ -617,7 +811,7 @@ export default function NotionClone() {
                         directoryStack.push(handle);
                       }
                     }
-                  )
+                  ).catch(()=>{})
                 }
                 className="mb-4 bg-[#222] hover:bg-[#333] text-white"
               >
@@ -628,9 +822,24 @@ export default function NotionClone() {
           {/* Files/Directory List */}
           {directoryHandle !== undefined && (
             <div className="mb-8">
-              <div className="flex items-center gap-2 mb-4">
-                <Folders className="h-4 w-4" />
-                <span>Folders</span>
+              <div className="flex justify-between items-center mb-4 flex-grow-0">
+                <div className="flex items-center gap-2 mb-4">
+                  <Folders className="h-4 w-4" />
+                  <span>Folders</span>
+                </div>
+                <button
+                  className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl hover:bg-[#333] cursor-pointer transition text-xs h-8 bg-transparent text-gray-300 hover:text-white"
+                  onClick={() => {
+                    setShowNewDirectoryModal(true);
+                  }}
+                  disabled={
+                    directoryStack.length === 0 &&
+                    topDirectoryHandle === undefined
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">New Folder</span>
+                </button>
               </div>
               <div className="flex flex-wrap flex-row overflow-y-auto overscroll-auto max-w-3xl gap-2 mb-4 text-gray-400 text-nowrap">
                 {directoryHandle != topDirectoryHandle && (
@@ -648,14 +857,26 @@ export default function NotionClone() {
                 {directoryFolders.map((item) => {
                   return (
                     <div
-                      className="flex-shrink-0 flex-auto flex  justify-items-stretch items-center gap-2 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-content: space-between flex-grow"
+                      className="flex-shrink-0 flex-auto flex items-center gap-8 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-between flex-grow-0"
                       key={item.name}
                       onClick={() => {
                         pushDirectory(item.name);
                       }}
                     >
-                      <Folder className="h-4 w-4" />
-                      <span>{item.name}</span>
+                      <div className="flex items-center gap-2">
+                        <Folder className="h-4 w-4" />
+                        <span>{item.name}</span>
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-white transition flex-grow-0"
+                        onClick={(e) => {
+                          setDirectoryToDelete(item.name);
+                          setShowDeleteDirectoryDialog(true);
+                          e.stopPropagation();
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })}
@@ -665,7 +886,7 @@ export default function NotionClone() {
                   <File className="h-4 w-4" />
                   <span className="flex">Notebooks</span>
                 </div>
-                <div className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl text-gray-400 hover:bg-[#333] cursor-pointer transition">
+                <div className="flex items-center flex-grow-0 border border-[#333] p-2 rounded-xl hover:bg-[#333] cursor-pointer transition text-xs h-8 bg-transparent text-gray-300 hover:text-white">
                   <FilePlus2 className="h-4 w-4" />
                   <Button
                     className="text-xs h-8 bg-transparent border-gray-600 text-gray-300 hover:bg-[#333] hover:text-white"
@@ -681,223 +902,40 @@ export default function NotionClone() {
                 {directoryNotebooks.map((item) => {
                   return (
                     <div
-                      className="flex-shrink-0 flex-auto flex  justify-items-stretch items-center gap-2 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-content: space-between flex-grow"
+                      className="flex-shrink-0 flex-auto flex items-center gap-8 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition justify-between flex-grow-0"
                       key={item.name}
                       onClick={() => {
                         if (
                           item.name !== undefined &&
                           directoryHandle !== undefined
                         ) {
-                          openBook(item.name);
+                          console.debug("Opening book:",openBook(item.name).catch((e) => {
+                            console.error(e.message, e.stack);
+                          }));
                         }
                       }}
                     >
-                      <FileText className="w-2rem h-2rem" />
-                      <span className="w-full text-center">{item.name}</span>
+                      <div className="flex items-center gap-2 flex-grow-0">
+                        <FileText className="w-2rem h-2rem" />
+                        <span className="text-center">{item.name}</span>
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-white transition flex-grow-0 mr-2"
+                        onClick={(e) => {
+                          setDirectoryToDelete(item.name + ".ncnb");
+                          setShowDeleteDirectoryDialog(true);
+                          e.stopPropagation();
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })}
               </div>
-              {pages.size > 0 && (
-                <div className="flex flex-col gap-2 mb-4 text-gray-400 justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    <span>Pages</span>
-                  </div>
-                  <div className="flex items-center gap-2 mb-4 text-gray-400">
-                    {[...pages.keys()].map((page) => {
-                      return (
-                        <div
-                          key={page}
-                          className="bg-[#222] rounded-lg p-4 hover:bg-[#2a2a2a] transition cursor-pointer group flex"
-                        >
-                          <Button
-                            className="bg-white text-black hover:bg-gray-200 flex rounded-xl mr-2"
-                            onClick={() => {
-                              savePage(page);
-                            }}
-                          >
-                            <Save className="h-4 w-4" />
-                            <span className="text-sm">Save</span>
-                          </Button>
-                          <div className="flex-1 flex items-center justify-between">
-                            {page}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {pages.size > 5 && (
-                      <div className="flex items-center gap-2 mb-4 text-gray-400">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="text-sm">More</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
-          {/* Recently visited */}
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-4 text-gray-400">
-              <Clock className="h-4 w-4" />
-              <span className="text-sm">Recently visited</span>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {recentPages.map((page) => {
-                return (
-                  <div
-                    key={page.id}
-                    className="bg-[#222] rounded-lg p-4 hover:bg-[#2a2a2a] transition cursor-pointer group"
-                    onClick={() => navigateTo(page.id)}
-                  >
-                    <div className="flex justify-between mb-4">
-                      <div>
-                        {page.icon === "image" && (
-                          <Image
-                            src="/placeholder.svg?height=40&width=120"
-                            width={120}
-                            height={40}
-                            alt={page.title}
-                            className="h-8 object-contain"
-                          />
-                        )}
-                        {page.icon === "file" && (
-                          <FileText className="h-6 w-6 text-gray-400" />
-                        )}
-                        {page.icon === "forum" && (
-                          <div className="h-6 w-6 text-pink-500 flex items-center justify-center">
-                            <span className="text-lg">🗣️</span>
-                          </div>
-                        )}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-[#333] border-[#444] text-white">
-                          <DropdownMenuItem className="hover:bg-[#444] cursor-pointer">
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="hover:bg-[#444] cursor-pointer">
-                            Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="hover:bg-[#444] cursor-pointer text-red-400">
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <div className="text-sm font-medium">{page.title}</div>
-                    <div className="flex items-center gap-1 mt-2">
-                      <div className="w-4 h-4 bg-gray-500 rounded-sm flex items-center justify-center text-[10px]">
-                        {page.user}
-                      </div>
-                      <span className="text-xs text-gray-400">{page.date}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Upcoming events */}
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-4 text-gray-400">
-              <Calendar className="h-4 w-4" />
-              <span className="text-sm">Upcoming events</span>
-            </div>
-
-            <div className="bg-[#222] rounded-lg p-6 mb-4">
-              <div className="flex flex-col md:flex-row">
-                <div className="flex-1 flex items-center justify-center p-6">
-                  <div className="text-center">
-                    <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-400 text-sm">
-                      See your upcoming events and join meetings from Home.
-                    </p>
-                    <Button
-                      variant="link"
-                      className="mt-2 text-blue-400 hover:text-blue-300"
-                    >
-                      Connect Notion Calendar
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex-1 border-t md:border-t-0 md:border-l border-[#333] p-4">
-                  {events.reduce((acc: JSX.Element[], event, index, array) => {
-                    // Check if we need to add a day header
-                    if (index === 0 || event.day !== array[index - 1].day) {
-                      acc.push(
-                        <div
-                          key={`day-${event.day}`}
-                          className={`${index > 0 ? "mt-6" : ""} mb-4`}
-                        >
-                          <div className="text-xs text-gray-400 mb-1">
-                            {event.day}
-                          </div>
-                          <div className="text-xs text-gray-400">
-                            {event.date}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    // Add the event
-                    acc.push(
-                      <div
-                        key={event.id}
-                        className="mb-4 cursor-pointer hover:bg-[#2a2a2a] p-2 -mx-2 rounded transition"
-                      >
-                        <div className="text-sm">{event.title}</div>
-                        <div className="text-xs text-gray-400">
-                          {event.time} · {event.location}
-                        </div>
-                      </div>
-                    );
-
-                    return acc;
-                  }, [] as JSX.Element[])}
-
-                  <div className="mt-4">
-                    <Button
-                      variant="outline"
-                      className="text-xs h-8 bg-transparent border-gray-600 text-gray-300 hover:bg-[#333] hover:text-white"
-                    >
-                      Join meeting
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Home views */}
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-4 text-gray-400">
-              <Menu className="h-4 w-4" />
-              <span className="text-sm">Home views</span>
-            </div>
-
-            <div className="bg-[#222] rounded-lg p-6">
-              <div className="flex justify-between items-center mb-4">
-                <div className="text-sm font-medium">Activity</div>
-                <div className="text-sm font-medium">Status</div>
-              </div>
-
-              <div className="flex justify-between items-center py-2 border-t border-[#333] hover:bg-[#2a2a2a] -mx-6 px-6 cursor-pointer transition">
-                <div className="flex items-center gap-2">
-                  <Star className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm">Wake up and freshen up</span>
-                </div>
-                <div className="text-sm text-gray-400">Done</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 

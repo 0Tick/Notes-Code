@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "react";
 import { errorToast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
-import path from "path";
 
 // Declaration for the experimental showDirectoryPicker API
 declare const showDirectoryPicker: (
@@ -20,10 +19,27 @@ export function useFilesystem() {
   const [directoryPickerAvailable, setDirectoryPickerAvailable] =
     useState(false);
 
-  // Effect to check for directory picker availability on mount
+  // Effect to check for directory picker availability on mount and initialize storage directory
   useEffect(() => {
     setDirectoryPickerAvailable(showDirectoryPicker !== undefined);
+    if (
+      navigator.storage &&
+      navigator.storage.getDirectory !== undefined &&
+      directoryHandle === undefined
+    ) {
+      navigator.storage.getDirectory().then((dirHandle) => {
+        setTopDirectoryHandle(dirHandle);
+        setDirectoryHandle(dirHandle);
+        setDirectoryStack([dirHandle]);
+      });
+    }
   }, []);
+
+  const [showCanvasEditor, setShowCanvasEditor] = useState(false);
+  const [strokeColor, setStrokeColor] = useState<string>("#000000");
+  const [erasing, setErasing] = useState<boolean>(false);
+  // State to trigger a reload of the currently active pages
+  const [toReloadPages, setToReloadPages] = useState<boolean>(false);
 
   // State for the top-level directory handle selected by the user
   const [topDirectoryHandle, setTopDirectoryHandle] = useState<
@@ -42,68 +58,75 @@ export function useFilesystem() {
     FileSystemDirectoryHandle | undefined
   >(undefined);
 
-  // Effect to update folders and notebooks when the directory handle changes
-  useEffect(() => {
-    updateDirectory();
-    setNotebookDirectory(undefined);
-  }, [directoryHandle]);
-
   // Updates the folders and notebooks in the current directory
-  const updateDirectory = useCallback(() => {
-    if (directoryHandle === undefined) {
-      setDirectoryFolders([]);
-      setDirectoryNotebooks([]);
-      return;
-    }
-    let directoryEntries: {
-      name: string;
-      handle: FileSystemDirectoryHandle;
-    }[] = [];
-    let notebookEntries: { name: string; handle: FileSystemDirectoryHandle }[] =
-      [];
-    let getEntries = async () => {
-      for await (const [
-        key,
-        value,
-        //@ts-expect-error 2339
-      ] of directoryHandle.entries() as Iterable<
-        [string, FileSystemDirectoryHandle | FileSystemFileHandle]
-      >) {
-        if (value instanceof FileSystemDirectoryHandle) {
-          if (isNotebook(value)) {
-            notebookEntries.push({
-              name: key.replace(".ncnb", ""),
-              handle: value,
-            });
-          } else {
-            directoryEntries.push({
-              name: key,
-              handle: value,
-            });
+  const updateDirectory = useCallback(
+    (handle?: FileSystemDirectoryHandle) => {
+      if (handle === undefined) {
+        handle = directoryHandle;
+      }
+      if (handle === undefined) {
+        setDirectoryFolders([]);
+        setDirectoryNotebooks([]);
+        return Promise.resolve();
+      }
+      let directoryEntries: {
+        name: string;
+        handle: FileSystemDirectoryHandle;
+      }[] = [];
+      let notebookEntries: {
+        name: string;
+        handle: FileSystemDirectoryHandle;
+      }[] = [];
+      let getEntries = async () => {
+        for await (const [
+          key,
+          value,
+          //@ts-expect-error 2339
+        ] of handle.entries() as Iterable<
+          [string, FileSystemDirectoryHandle | FileSystemFileHandle]
+        >) {
+          if (value instanceof FileSystemDirectoryHandle) {
+            if (isNotebook(value)) {
+              notebookEntries.push({
+                name: key.replace(".ncnb", ""),
+                handle: value,
+              });
+            } else {
+              directoryEntries.push({
+                name: key,
+                handle: value,
+              });
+            }
           }
         }
-      }
-    };
-    getEntries()
-      .then(() => {
-        directoryEntries.sort((a, b) =>
-          a.name.toLowerCase() > b.name.toLowerCase() ? 1 : -1
-        );
-        notebookEntries.sort((a, b) =>
-          a.name.toLocaleLowerCase() > b.name.toLocaleLowerCase() ? 1 : -1
-        );
-        setDirectoryFolders(directoryEntries);
-        setDirectoryNotebooks(notebookEntries);
-      })
-      .catch((err) => {
-        console.log(err);
-      });
-  }, [directoryHandle]);
+      };
+      return getEntries()
+        .then(() => {
+          directoryEntries.sort((a, b) =>
+            a.name.toLowerCase() > b.name.toLowerCase() ? 1 : -1
+          );
+          notebookEntries.sort((a, b) =>
+            a.name.toLocaleLowerCase() > b.name.toLocaleLowerCase() ? 1 : -1
+          );
+          setDirectoryFolders(directoryEntries);
+          setDirectoryNotebooks(notebookEntries);
+          return Promise.resolve();
+        })
+        .catch((err) => {
+          return Promise.reject(err);
+        });
+    },
+    [directoryHandle]
+  );
 
   // State for the stack of directory handles for navigation history
   const [directoryStack, setDirectoryStack] = useState<
     FileSystemDirectoryHandle[]
   >([]);
+  // State for the name of the notebook to be opened
+  const [openBookName, setOpenBookName] = useState<string | undefined>(
+    undefined
+  );
 
   // Pops the last directory from the stack and sets it as the current directory
   const popDirectory = useCallback(() => {
@@ -128,7 +151,7 @@ export function useFilesystem() {
           setDirectoryHandle(handle);
         })
         .catch((err) => {
-          console.log(err);
+          console.debug(err.message, err.stack);
         });
     },
     [directoryStack, directoryHandle]
@@ -171,26 +194,11 @@ export function useFilesystem() {
         dir = notebookDirectory;
       }
       if (dir === undefined) {
-        errorToast({
-          title: "Error finding Pages Directory",
-          description:
-            "Something went wrong finding the Pages Directory. Does it not exist?.",
-        });
-        return;
+        return Promise.reject("No notebook directory set");
       }
-      dir
-        .getDirectoryHandle("pages")
-        .then((handle) => {
-          setPagesDirectory(handle);
-        })
-        .catch((err) => {
-          errorToast({
-            title: "Error finding Pages Directory",
-            description:
-              "Something went wrong finding the Pages Directory. Does it not exist?. Check the Console for details.",
-          });
-          console.log(err);
-        });
+      return dir.getDirectoryHandle("pages").then((handle) => {
+        setPagesDirectory(handle);
+      });
     },
     [notebookDirectory]
   );
@@ -203,36 +211,20 @@ export function useFilesystem() {
         dir = notebookDirectory;
       }
       if (dir === undefined) {
-        errorToast({
-          title: "Error getting Image Directory",
-          description:
-            "Something went wrong finding the Image Directory. Does it not exist?.",
-        });
-        return;
+        return Promise.reject("No notebook directory set");
       }
-      dir
-        .getDirectoryHandle("img", { create: true })
-        .then((handle) => {
-          setImagesDirectory(handle);
-        })
-        .catch((err) => {
-          errorToast({
-            title: "Error loading Image Directory",
-            description:
-              "Something went wrong creating the ImageDirectory. Check the Console for details.",
-          });
-          console.log(err);
-        });
+      return dir.getDirectoryHandle("img", { create: true }).then((handle) => {
+        setImagesDirectory(handle);
+      });
     },
     [notebookDirectory]
   );
 
-  // Effect to update image and pages directory handles when the notebook directory changes
+  // Effect to update image and pages directory handles and load notebook config when the notebook directory changes
   useEffect(() => {
-    setPages(new Map<string, NotesCode.Document>());
+    let newPages = new Map<string, NotesCode.Document>();
     if (notebookDirectory === undefined) {
-      setImagesDirectory(undefined);
-      setPagesDirectory(undefined);
+      unloadNotebook();
       return;
     }
     notebookDirectory
@@ -269,12 +261,23 @@ export function useFilesystem() {
                 prevPage: string;
               }
             >(Object.entries(notebook.pages));
-            setNotebookConfig(notebook);
-            let handle = pagesDirectory;
             notebookDirectory
               .getDirectoryHandle("pages")
               .then((pagesDirHandle) => {
-                loadPage(notebook.lastActivePage, pagesDirHandle);
+                return loadPage(notebook.lastActivePage, pagesDirHandle);
+              })
+              .then((cont) => {
+                newPages.set(notebook.lastActivePage, cont);
+                setNotebookConfig(notebook);
+                return setCurrentPage(notebook.lastActivePage);
+              })
+              .catch((err) => {
+                errorToast({
+                  title: "Error loading page",
+                  description:
+                    "Something went wrong loading the last active page. Check the Console for details.",
+                });
+                console.debug(err.message, err.stack);
               });
           } else {
             errorToast({
@@ -292,22 +295,31 @@ export function useFilesystem() {
           description:
             "Something went wrong reading the Notebook. Is the Index file missing? Check console for more details.",
         });
-        console.log(err);
+        console.debug(err.message, err.stack);
       });
-    refreshImagesDirectory(notebookDirectory);
-    refreshPagesDirectory(notebookDirectory);
+    refreshImagesDirectory(notebookDirectory).catch((err) => {
+      console.error("Error refreshing images directory:", err);
+    });
+    refreshPagesDirectory(notebookDirectory).catch((err) => {
+      console.error("Error refreshing pages directory:", err);
+    });
   }, [notebookDirectory]);
 
   // Opens a notebook by name and sets the notebook directory handle
   const openBook = useCallback(
     (notebookName: string) => {
       if (directoryHandle === undefined) {
-        return;
+        return Promise.reject("No directory handle set");
       }
-      directoryHandle
-        .getDirectoryHandle(notebookName + ".ncnb")
-        .then((dirHandle) => {
-          setNotebookDirectory(dirHandle);
+      return unloadNotebook()
+        .catch(() => {})
+        .finally(() => {
+          return directoryHandle
+            .getDirectoryHandle(notebookName + ".ncnb")
+            .then((dirHandle) => {
+              setNotebookDirectory(dirHandle);
+              return Promise.resolve();
+            });
         });
     },
     [directoryHandle]
@@ -318,56 +330,85 @@ export function useFilesystem() {
     new Map<string, NotesCode.Document>()
   );
 
+  const [currentPage, setCurrentPage] = useState<string | undefined>(undefined);
+
+  // Effect to update notebook config with the last active page when the current page changes
+  useEffect(() => {
+    if (currentPage !== undefined && notebookConfig !== undefined) {
+      setNotebookConfig({
+        version: notebookConfig.version,
+        description: notebookConfig.description,
+        lastActivePage: currentPage,
+        pages: notebookConfig.pages,
+      });
+      setToReloadPages(true);
+    }
+  }, [currentPage]);
+
   // Loads a specific page from the pages directory
   const loadPage = useCallback(
-    (page: string, pageDirHandle?: FileSystemDirectoryHandle) => {
+    (
+      page: string,
+      pageDirHandle?: FileSystemDirectoryHandle,
+      customPages?: Map<string, NotesCode.Document>,
+      fullReload?: boolean
+    ) => {
       let handle = pageDirHandle;
       if (handle === undefined) {
         handle = pagesDirectory;
       }
       if (handle === undefined) {
-        errorToast({
-          title: "Error loading Page",
-          description:
-            "Something went wrong finding the Page Directory. Does it not exist?. Check the Console for details.",
-        });
-        return;
+        return Promise.reject("No pages directory set");
       }
-      if (pages.has(page)) {
-        return;
+      let updatePages = false;
+      if (customPages === undefined && !fullReload) {
+        customPages = pages;
+        updatePages = true;
       }
-      handle
+      if (pages.has(page) && !fullReload) {
+        let p = pages.get(page);
+        if (p === undefined) {
+          return Promise.reject("Page not found");
+        }
+        return Promise.resolve(p);
+      }
+      return handle
         .getFileHandle(page)
         .then((pageHandle) => {
           return pageHandle.getFile();
         })
         .then((file) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            if (reader.result !== null) {
-              let pageContent = NotesCode.Document.decode(
-                new Uint8Array(Buffer.from(reader.result.toString(), "base64"))
-              );
-              let newPages = new Map<string, NotesCode.Document>(pages);
-              newPages.set(page, pageContent);
-              setPages(newPages);
-              console.debug("Successfully loaded page " + page);
-            } else {
-              errorToast({
-                title: `Something went wrong reading page ${page}.`,
-                description:
-                  "Either the file is corrupted/empty or the Page is not a valid Page File. If this problem persists, please manually remove the faulty Page from the Notebook.",
-              });
+          return new Promise(
+            (resolve: (value: ArrayBuffer) => void, reject) => {
+              const reader = new FileReader();
+
+              // Handle successful load
+              reader.onload = (e) => {
+                if (typeof reader.result === "object") {
+                  resolve(reader.result as ArrayBuffer);
+                } else {
+                  reject(new Error("Unexpected result type"));
+                }
+              };
+
+              // Handle errors
+              reader.onerror = () => {
+                reject(reader.error || new Error("File reading failed"));
+              };
+
+              // Initiate reading
+              reader.readAsArrayBuffer(file);
             }
-          };
-          reader.readAsText(file);
+          );
         })
-        .catch((err) => {
-          errorToast({
-            title: "Error loading Page",
-            description: `Something went wrong reading page "${page}". Does it not exist?. Check the Console for details. If this problem persists, please manually remove the faulty Page from the Notebook.`,
-          });
-          console.log(err);
+        .then((result) => {
+          let pageContent = NotesCode.Document.decode(new Uint8Array(result));
+          if (updatePages) {
+            let newPages = new Map<string, NotesCode.Document>(customPages);
+            newPages.set(page, pageContent);
+            setPages(newPages);
+          }
+          return Promise.resolve(pageContent);
         });
     },
     [pagesDirectory, pages]
@@ -375,72 +416,57 @@ export function useFilesystem() {
 
   // Saves the content of a specific page to the pages directory
   const savePage = useCallback(
-    (page: string, unload?: boolean) => {
-      if (pagesDirectory === undefined) {
-        errorToast({
-          title: "Error saving Page",
-          description:
-            "Something went wrong finding the Page Directory. Does it not exist?.",
-        });
-        return;
+    (page: string, unload?: boolean, dir?: FileSystemDirectoryHandle) => {
+      if (dir === undefined) {
+        dir = pagesDirectory;
       }
-      pagesDirectory
+      if (dir === undefined) {
+        return Promise.reject("No pages directory set");
+      }
+      return dir
         .getFileHandle(page)
         .then((pageHandle) => {
           return pageHandle.createWritable({
             keepExistingData: false,
-            //@ts-expect-error
-            mode: "exclusive",
           });
         })
         .then((writable) => {
           let doc = pages.get(page);
           if (doc === undefined) {
-            errorToast({
-              title: "Error saving Page",
-              description: "The page was already unloaded. Unable to save",
-            });
-            return;
+            return Promise.reject(`Page '${page}' not found`);
           }
-          let pageContent = Buffer.from(
-            NotesCode.Document.encode(doc).finish()
-          );
-          writable.write(pageContent.toString("base64"));
+          let pageContent = NotesCode.Document.encode(doc).finish();
+          writable.write(pageContent);
           return writable.close();
         })
         .then(() => {
           if (unload) {
             let newPages = new Map<string, NotesCode.Document>(pages);
             newPages.delete(page);
-            setPages(newPages);
+            return Promise.resolve(newPages);
           }
-        })
-        .catch((err) => {
-          errorToast({
-            title: "Error saving Page",
-            description:
-              "Something went wrong writing to the Page file. Check the Console for details.",
-          });
-          console.log(err);
+          return Promise.resolve(pages);
         });
     },
     [pagesDirectory, pages]
   );
 
+  // Saves the notebook configuration to nc.json
   const saveNotebookConfig = useCallback(() => {
     if (notebookConfig === undefined) {
-      return;
+      return Promise.reject("No notebook config set");
     }
-    let nConf = notebookConfig;
+    if (notebookDirectory === undefined) {
+      return Promise.reject("No notebook directory set");
+    }
+    let nConf = structuredClone(notebookConfig);
     //@ts-expect-error
-    nConf.pages = Object.fromEntries(notebookConfig.pages);
-    notebookDirectory
-      ?.getFileHandle("nc.json")
+    nConf.pages = Object.fromEntries(nConf.pages);
+    return notebookDirectory
+      .getFileHandle("nc.json")
       .then((fileHandle) => {
         return fileHandle.createWritable({
           keepExistingData: false,
-          //@ts-expect-error
-          mode: "exclusive",
         });
       })
       .then((writable) => {
@@ -449,20 +475,134 @@ export function useFilesystem() {
       });
   }, [notebookConfig, notebookDirectory]);
 
+  // Effect to autosave notebook config whenever it changes
+  useEffect(() => {
+    if (notebookConfig !== undefined) {
+      saveNotebookConfig().catch((err) => {
+        console.debug(
+          "Failed to autosave notebook config:",
+          err.message,
+          err.stack
+        );
+      });
+    }
+  }, [notebookConfig]);
+
+  // Saves all currently loaded pages
+  const savePages = useCallback(
+    (unload: boolean) => {
+      if (pagesDirectory === undefined) {
+        return Promise.reject("No pages directory set");
+      }
+      let promises: Promise<any>[] = [];
+      pages.forEach((_, key) => {
+        promises.push(savePage(key, unload, pagesDirectory));
+      });
+      return Promise.all(promises);
+    },
+    [pagesDirectory, pages]
+  );
+
+  // Reloads the currently active pages based on the notebook configuration and unloads pages out of Range
+  const reloadPages = useCallback(
+    (fullReload?: boolean) => {
+      if (
+        notebookConfig === undefined ||
+        currentPage === undefined ||
+        pages === undefined
+      ) {
+        return Promise.reject("Config or current page not set");
+      }
+      let nbConf = notebookConfig;
+      return Promise.all([
+        traversePages(true, 2, currentPage),
+        traversePages(false, 2, currentPage),
+      ]).then((currentActivePagesTuple) => {
+        currentActivePagesTuple[0] = currentActivePagesTuple[0].filter(
+          (page) => page !== currentPage
+        );
+        currentActivePagesTuple[1].filter((page) => page !== currentPage);
+        const mergedActivePages = [
+          ...currentActivePagesTuple[0],
+          currentPage,
+          ...currentActivePagesTuple[1],
+        ];
+        let promises: Promise<any>[] = [];
+        pages.keys().forEach((key) => {
+          if (!mergedActivePages.find((page) => page === key)) {
+            promises.push(savePage(key, true));
+          }
+        });
+        return Promise.all(promises).then(() => {
+          let newPages = new Map<string, NotesCode.Document>();
+          let promises: Promise<any>[] = [];
+          mergedActivePages.forEach((page) => {
+            if (!pages.has(page) || fullReload) {
+              promises.push(
+                loadPage(page, pagesDirectory, undefined, fullReload).then(
+                  (cont) => {
+                    newPages.set(page, cont);
+                    return Promise.resolve();
+                  }
+                )
+              );
+            }
+          });
+          return Promise.all(promises).then(() => {
+            for (let [key, value] of newPages) {
+              let val = pages.get(key);
+              if (val === undefined || val.toJSON() === value.toJSON()) {
+                pages.set(key, value);
+                break;
+              }
+            }
+          });
+        });
+      });
+    },
+    [notebookConfig, currentPage, pages]
+  );
+
+  // Traverses the linked list of pages in a given direction
+  const traversePages = useCallback(
+    (forward: boolean, n: number, page: string): Promise<string[]> => {
+      if (
+        !notebookConfig ||
+        n === 0 ||
+        notebookConfig === undefined ||
+        currentPage === undefined
+      ) {
+        return Promise.resolve([page]);
+      }
+      let oldPage = page;
+      //@ts-expect-error
+      page = forward
+        ? notebookConfig.pages.get(page)?.nextPage
+        : notebookConfig.pages.get(page)?.prevPage;
+      if (page === undefined || page === "") {
+        return Promise.resolve([oldPage]);
+      }
+      return traversePages(forward, n - 1, page).then((rec) => {
+        return forward ? [oldPage, ...rec] : [...rec, oldPage];
+      });
+    },
+    [notebookConfig, currentPage, pages]
+  );
+
+  // Creates a new notebook with a default page and configuration
   const createNewNotebook = useCallback(
     (name: string, notebookDescription: string) => {
-      directoryHandle
-        ?.getDirectoryHandle(name + ".ncnb")
+      if (directoryHandle === undefined) {
+        return Promise.reject("No directory handle set");
+      }
+      return directoryHandle
+        .getDirectoryHandle(name + ".ncnb")
         .then(() => {
-          errorToast({
-            title: "Error creating Notebook",
-            description:
-              "This name already exists! Please try a different one.",
-          });
+          return Promise.reject("Name already exists");
         })
         .catch(() => {
           let firstPageName = nanoid();
-          directoryHandle
+          return directoryHandle
             .getDirectoryHandle(name + ".ncnb", { create: true })
             .then((dirHandle) => {
               dirHandle
@@ -470,8 +610,6 @@ export function useFilesystem() {
                 .then((fileHandle) => {
                   return fileHandle.createWritable({
                     keepExistingData: false,
-                    //@ts-expect-error
-                    mode: "exclusive",
                   });
                 })
                 .then((writable) => {
@@ -507,27 +645,26 @@ export function useFilesystem() {
                 })
                 .then((pagesDirHandle) => {
                   let pageName = firstPageName;
-                  let pageContent = Buffer.from(
-                    NotesCode.Document.encode(new NotesCode.Document()).finish()
-                  );
-                  pagesDirHandle
-                    .getFileHandle(pageName, { create: true })
-                    .then((pageHandle) => {
-                      pageHandle
-                        .createWritable({
-                          keepExistingData: false,
-                          //@ts-expect-error
-                          mode: "exclusive",
-                        })
-                        .then((stream) => {
-                          stream.write(pageContent.toString("base64"));
-                          stream.close();
-                        });
-                    });
+                  return pagesDirHandle.getFileHandle(pageName, {
+                    create: true,
+                  });
+                })
+                .then((pageHandle) => {
+                  return pageHandle.createWritable({
+                    keepExistingData: false,
+                  });
+                })
+                .then((stream) => {
+                  let pageContent = NotesCode.Document.encode(
+                    new NotesCode.Document()
+                  ).finish();
+                  stream.write(pageContent);
+                  return stream.close();
                 })
                 .then(() => {
-                  setNotebookDirectory(dirHandle);
                   updateDirectory();
+                  setToLoadNotebook(name);
+                  return dirHandle;
                 });
             });
         });
@@ -535,6 +672,366 @@ export function useFilesystem() {
     [directoryHandle]
   );
 
+  // Effect to open a notebook when openBookName state changes
+  useEffect(() => {
+    if (openBookName !== undefined) {
+      openBook(openBookName).catch((err) => {
+        console.debug("Error opening book:", err.message, err.stack);
+      });
+      setOpenBookName(undefined);
+    }
+  }, [openBookName]);
+
+  // Removes a directory or file from the current directory
+  const removeDirectory = useCallback(
+    (item: string, handle?: FileSystemDirectoryHandle) => {
+      if (handle === undefined) {
+        handle = directoryHandle;
+      }
+      if (handle === undefined) {
+        return Promise.reject("No handle provided/set");
+      }
+      return handle
+        .removeEntry(item, { recursive: true })
+        .then(() => {
+          updateDirectory();
+          return Promise.resolve();
+        })
+        .catch((err) => {
+          updateDirectory();
+          return Promise.reject(err);
+        });
+    },
+    [directoryHandle]
+  );
+
+  // Creates a new directory within the current directory
+  const createDirectory = useCallback(
+    (name: string, handle?: FileSystemDirectoryHandle) => {
+      if (handle === undefined) {
+        handle = directoryHandle;
+      }
+      if (handle === undefined) {
+        return Promise.reject("No handle provided/set");
+      }
+      return handle
+        .getDirectoryHandle(name, { create: true })
+        .then((dirHandle) => {
+          updateDirectory();
+          return dirHandle;
+        })
+        .catch((err) => {
+          return Promise.reject(err);
+        });
+    },
+    [directoryHandle]
+  );
+
+  type PageCreationInsertPosition = "first" | "last" | "before" | "after";
+  // Creates a new page and inserts it into the notebook's page list
+  const createPage = useCallback(
+    (
+      handle?: FileSystemDirectoryHandle,
+      options?: {
+        insert?: PageCreationInsertPosition;
+        width?: number;
+        height?: number;
+        background?: string;
+      }
+    ) => {
+      if (handle === undefined) {
+        handle = pagesDirectory;
+      }
+      if (
+        handle === undefined ||
+        notebookConfig === undefined ||
+        currentPage === undefined
+      ) {
+        return Promise.reject(
+          "No " +
+            (handle === undefined ? "handle," : "") +
+            (notebookConfig === undefined ? "Notebook config," : "") +
+            (currentPage === undefined ? "Active Page," : "") +
+            "available"
+        );
+      }
+      if (options === undefined) {
+        options = {
+          insert: "after",
+          width: 800,
+          height: 600,
+          background: "default",
+        };
+      }
+      let insert = options.insert || "after";
+      let id = nanoid();
+      return handle
+        .getFileHandle(id, { create: true })
+        .then((pageHandle) => {
+          return pageHandle.createWritable({
+            keepExistingData: false,
+          });
+        })
+        .then((stream) => {
+          let pageContent = NotesCode.Document.encode(
+            new NotesCode.Document()
+          ).finish();
+          stream.write(pageContent);
+          return stream.close();
+        })
+        .then(() => {
+          let newPgs = new Map<
+            string,
+            {
+              width: number;
+              height: number;
+              background: string;
+              nextPage: string;
+              prevPage: string;
+            }
+          >(notebookConfig.pages);
+          let newPage = {
+            width: options.width || 600,
+            height: options.height || 800,
+            background: options.background || "default",
+            nextPage: "",
+            prevPage: "",
+          };
+          let currPage = newPgs.get(currentPage);
+          if (currPage === undefined) {
+            return Promise.reject("Current page not found");
+          }
+          switch (options.insert) {
+            case "first":
+              let prevPageConf = newPgs.get(currentPage);
+              if (prevPageConf === undefined) {
+                return Promise.reject("Current page not found");
+              }
+              let prevPageID = currentPage;
+              while (
+                prevPageConf !== undefined &&
+                prevPageConf.prevPage !== "" &&
+                newPgs.has(prevPageConf.prevPage)
+              ) {
+                let next = newPgs.get(prevPageConf.prevPage);
+                prevPageID = prevPageConf.prevPage;
+                prevPageConf = next;
+              }
+              newPage.nextPage = prevPageID;
+              if (prevPageConf === undefined) {
+                return Promise.reject("Error inserting page");
+              }
+              prevPageConf.prevPage = id;
+              newPgs.set(id, newPage);
+              newPgs.set(prevPageID, prevPageConf);
+              break;
+            case "last":
+              let nextPageConf = newPgs.get(currentPage);
+              if (nextPageConf === undefined) {
+                return Promise.reject("Current page not found");
+              }
+              let nextPageID = currentPage;
+              while (
+                nextPageConf !== undefined &&
+                nextPageConf.nextPage !== "" &&
+                newPgs.has(nextPageConf.nextPage)
+              ) {
+                let next = newPgs.get(nextPageConf.nextPage);
+                nextPageID = nextPageConf.nextPage;
+                nextPageConf = next;
+              }
+              newPage.prevPage = nextPageID;
+              if (nextPageConf === undefined) {
+                return Promise.reject("Error inserting page");
+              }
+              nextPageConf.nextPage = id;
+              newPgs.set(id, newPage);
+              newPgs.set(nextPageID, nextPageConf);
+              break;
+            case "before":
+              let oldPrevPageID = currPage.prevPage;
+              currPage.prevPage = id;
+              newPage.nextPage = currentPage;
+              if (oldPrevPageID !== "") {
+                let prevPage = newPgs.get(oldPrevPageID);
+                if (prevPage === undefined) {
+                  return Promise.reject("Error inserting page");
+                }
+                prevPage.nextPage = id;
+                newPage.prevPage = oldPrevPageID;
+                newPgs.set(oldPrevPageID, prevPage);
+              }
+              newPgs.set(id, newPage);
+              newPgs.set(currentPage, currPage);
+              break;
+            case "after":
+              let oldNextPageID = currPage.nextPage;
+              currPage.nextPage = id;
+              newPage.prevPage = currentPage;
+              if (oldNextPageID !== "") {
+                let nextPage = newPgs.get(oldNextPageID);
+                if (nextPage === undefined) {
+                  return Promise.reject("Error inserting page");
+                }
+                nextPage.prevPage = id;
+                newPage.nextPage = oldNextPageID;
+                newPgs.set(oldNextPageID, nextPage);
+              }
+              newPgs.set(id, newPage);
+              newPgs.set(currentPage, currPage);
+              break;
+          }
+          let conf = structuredClone(notebookConfig);
+          conf.pages = newPgs;
+          setNotebookConfig(conf);
+          setToReloadPages(true);
+          return Promise.resolve(id);
+        });
+    },
+    [pagesDirectory, notebookConfig, currentPage, pages, setToReloadPages]
+  );
+
+  // Deletes a page from the notebook and updates the page linkage
+  const deletePage = useCallback(
+    (page: string) => {
+      if (
+        notebookConfig === undefined ||
+        pagesDirectory === undefined ||
+        currentPage === undefined ||
+        pages === undefined
+      ) {
+        console.debug(notebookConfig, pagesDirectory, currentPage, pages);
+        return Promise.reject(
+          "Something went wrong deleting the page (Unloaded/Missing)"
+        );
+      }
+      let newConf = structuredClone(notebookConfig.pages);
+      let pageConf = notebookConfig.pages.get(page);
+      if (pageConf === undefined) {
+        return Promise.reject("Page not found");
+      }
+      if (pageConf.prevPage !== "") {
+        let prevPage = notebookConfig.pages.get(pageConf.prevPage);
+        if (prevPage === undefined) {
+          console.error(
+            `Previous page not found '${pageConf.prevPage}' while attempting to delete page '${page}' is the file missing? Please check you index`
+          );
+        } else {
+          prevPage.nextPage = pageConf.nextPage;
+          newConf.set(pageConf.prevPage, prevPage);
+        }
+      }
+      if (pageConf.nextPage !== "") {
+        let nextPage = notebookConfig.pages.get(pageConf.nextPage);
+        if (nextPage === undefined) {
+          console.error(
+            `Next page not found '${pageConf.nextPage}' while attempting to delete page '${page}' is the file missing? Please check you index`
+          );
+        } else {
+          nextPage.prevPage = pageConf.prevPage;
+          newConf.set(pageConf.nextPage, nextPage);
+        }
+      }
+      if (notebookConfig.pages.size === 1) {
+        return Promise.resolve();
+      }
+      let inheriter = currentPage;
+      if (inheriter === page) {
+        inheriter = pageConf.nextPage;
+      }
+      if (inheriter === "") {
+        inheriter = pageConf.prevPage;
+      }
+      if (inheriter === "" && notebookConfig.pages.size > 1) {
+        inheriter = notebookConfig.pages.keys().next().value || "";
+      }
+      if (inheriter === "") {
+        return Promise.reject("No inheriter found");
+      }
+      return pagesDirectory.removeEntry(page).then(() => {
+        newConf.delete(page);
+        setNotebookConfig({
+          version: notebookConfig.version,
+          description: notebookConfig.description,
+          lastActivePage: inheriter,
+          pages: newConf,
+        });
+        setCurrentPage(inheriter);
+        let newPagesState = new Map<string, NotesCode.Document>(pages);
+        newPagesState.delete(page);
+        setPages(newPagesState);
+        return Promise.resolve();
+      });
+    },
+    [notebookConfig, pagesDirectory, currentPage, pages, setToReloadPages]
+  );
+
+  // Unloads the current notebook, saving pages and config
+  const unloadNotebook = useCallback(() => {
+    let promises: Promise<any>[] = [];
+    pages.forEach((_, key) => {
+      promises.push(savePage(key, true));
+    });
+    promises.push(saveNotebookConfig().catch((e) => {}));
+    return Promise.allSettled(promises).finally(() => {
+      setNotebookConfig(undefined);
+      setCurrentPage(undefined);
+      setPages(new Map<string, NotesCode.Document>());
+    });
+  }, [
+    pages,
+    saveNotebookConfig,
+    savePage,
+    setNotebookConfig,
+    setCurrentPage,
+    setPages,
+  ]);
+
+  // Effect to unload the notebook and update the directory when the directory handle changes
+  useEffect(() => {
+    unloadNotebook();
+    updateDirectory();
+  }, [directoryHandle]);
+
+  // State to trigger loading a notebook by name
+  const [toLoadNotebook, setToLoadNotebook] = useState<string | null>(null);
+  useEffect(() => {
+    if (toLoadNotebook !== null) {
+      openBook(toLoadNotebook).catch((e) => {
+        console.error(e.message, e.stack);
+      });
+      setToLoadNotebook(null);
+    }
+  }, [toLoadNotebook, openBook]);
+  // Effect to reload pages when toReloadPages state is true
+  useEffect(() => {
+    if (toReloadPages === true && reloadPages !== undefined) {
+      reloadPages()
+        .then(() => {
+          setToReloadPages(false);
+        })
+        .catch((e) => {
+          console.error(e.message, e.stack);
+          setToReloadPages(true);
+        });
+    }
+  }, [toReloadPages, reloadPages, notebookConfig]);
+
+  // Gets all page IDs in their correct order
+  const getPagesInOrder = useCallback(() => {
+    if (notebookConfig === undefined || currentPage === undefined) {
+      return Promise.reject("No notebook config or current page set");
+    }
+    return traversePages(
+      false,
+      notebookConfig.pages.size,
+      notebookConfig.lastActivePage
+    ).then((pg) => {
+      return traversePages(true, notebookConfig.pages.size + 1, pg[0]);
+    });
+  }, [notebookConfig, currentPage]);
+
+  // Returns the state variables and functions provided by the hook
   return {
     directoryPickerAvailable,
     topDirectoryHandle,
@@ -547,6 +1044,7 @@ export function useFilesystem() {
     pagesDirectory,
     imagesDirectory,
     pages,
+    currentPage,
     setDirectoryHandle,
     setTopDirectoryHandle,
     popDirectory,
@@ -555,5 +1053,22 @@ export function useFilesystem() {
     loadPage,
     savePage,
     createNewNotebook,
+    removeDirectory,
+    createDirectory,
+    setPages,
+    createPage,
+    savePages,
+    reloadPages,
+    setCurrentPage,
+    deletePage,
+    getPagesInOrder,
+    setToReloadPages,
+    unloadNotebook,
+    showCanvasEditor,
+    setShowCanvasEditor,
+    strokeColor,
+    setStrokeColor,
+    erasing,
+    setErasing,
   };
 }
