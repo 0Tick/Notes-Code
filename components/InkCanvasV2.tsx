@@ -103,14 +103,11 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [onlyPen, setOnlyPen] = useState(penInputOnly);
   const [erase, setErase] = useState(erasing);
   const [page, setPageDoc] = useState<NotesCode.Document | undefined>(undefined);
-  const [triggerShow, setTriggerShow] = useState(false);
-  const [renderShow, setRenderShow] = useState(0);
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
-  const oldDeletePoint = useRef<NotesCode.Point[]| null>(null);
+  const dontShow = useRef(false);
 
   const zoomSpeed = 20;
-  const deleteRange = 1;
 
   // Use useImperativeHandle to expose methods
   useImperativeHandle(ref, () => ({
@@ -251,6 +248,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       if (!drawing || !pages || !currentPage || !page) return;
       lastPointRef.current = null;
       if (!erase) {
+        dontShow.current = true;
         let prev = pages.get(currentPage);
         if (!prev) return;
         setPage(
@@ -309,9 +307,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           console.log(newStrokes);
           setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
 
-          show();
-          setTriggerShow(true);
-          setRenderShow((prev) => prev + 1);
+          
         }
       setPoints([]);
     }}};
@@ -349,21 +345,13 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           prev.y +
           (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
-      setTriggerShow(true);
-      setRenderShow((prev) => prev + 1);
+      
       event.preventDefault();
     };
     if (!canvas) return;
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, [offset]);
-
-  // Offset-Änderung triggert show()
-  useEffect(() => {
-    setTriggerShow(true);
-    setRenderShow((prev) => prev + 1);
-    // eslint-disable-next-line
-  }, [offset, zoom, pages, currentPage]); // Add page to dependencies
 
   function calculateThickness(pressure: number) {
     return style.diameter * pressure;
@@ -392,10 +380,13 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         lastpoints = { x: j.x, y: j.y };
       });
     });
-    console.log("Show", page.strokes);
   }, [page, offset, zoom]);
 
   useEffect(() => {
+    if (dontShow.current) {
+      dontShow.current = false;
+      return;
+    }
     show();
   }, [page, offset, zoom])
 
@@ -424,8 +415,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   function resetPosition() {
     setZoom(1);
     setOffset({ x: 0, y: 1 });
-    setTriggerShow(true);
-    setRenderShow((prev) => prev + 1);
   }
 
   function newZoom(value: number){
@@ -460,20 +449,9 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     return false;
   }
 
-
-
   useEffect(() => {
     setOnlyPen(penInputOnly);
   }, [penInputOnly]);
-
-  
-
-  useEffect(() => {
-    if (triggerShow) {
-      show();
-      setTriggerShow(false);
-    }
-  }, [triggerShow, renderShow]);
 
   useEffect(() => {
     setErase(erasing);
