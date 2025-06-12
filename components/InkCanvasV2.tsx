@@ -266,48 +266,55 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           })
         );
       } else {
-        const deleteRadius = 10; // oder abhängig vom Pressure/Style
-        page.strokes.forEach((stroke) => {
-          stroke.points?.forEach(p => {
-            
-          points.forEach((q) => {
-            if (oldDeletePoint.current) {
-              
-              let temp = checkLineIntersection(
-                p as NotesCode.Point, 
-                oldDeletePoint.current[0], 
-                q, 
-                oldDeletePoint.current[1]
-              )
-              if (temp) console.log("Huhu", temp)
+        if (erase && points.length >= 2) {
+          const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
+          for (let i = 1; i < points.length; i++) {
+            eraserSegments.push([points[i - 1], points[i]]);
+          }
+
+          const newStrokes = page.strokes.filter((stroke) => {
+            if (!stroke.points || stroke.points.length < 2) return true;
+            for (let i = 1; i < stroke.points.length; i++) {
+              const strokeSegStart = stroke.points[i - 1];
+              const strokeSegEnd = stroke.points[i];
+              for (const [eStart, eEnd] of eraserSegments) {
+                if (checkLineIntersection(strokeSegStart as NotesCode.Point, strokeSegEnd as NotesCode.Point, eStart, eEnd)) {
+                  return false; // Schnitt gefunden → stroke löschen
+                }
+              }
             }
-            oldDeletePoint.current = [p as NotesCode.Point, q]
-            
+            return true; // kein Schnitt → stroke behalten
           });
+          if (erase && points.length >= 2) {
+            const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
+            for (let i = 1; i < points.length; i++) {
+              eraserSegments.push([points[i - 1], points[i]]);
+          }
+          console.log(eraserSegments);
+          const newStrokes = page.strokes.filter((stroke) => {
+            if (!stroke.points || stroke.points.length < 2) return true;
+            for (let i = 1; i < stroke.points.length; i++) {
+              const strokeSegStart = stroke.points[i - 1];
+              const strokeSegEnd = stroke.points[i];
+              for (const [eStart, eEnd] of eraserSegments) {
+                if (checkLineIntersection(strokeSegStart as NotesCode.Point, strokeSegEnd as NotesCode.Point, eStart, eEnd)) {
+                  console.log("Schnitt");
+                  return false; // Schnitt gefunden → stroke löschen
+                }
+              }
+            }
+            console.log("Kein Schnitt");
+            return true; // kein Schnitt → stroke behalten
           });
-        })
-        const newStrokes = page.strokes.filter((stroke) => {
-          // Use page prop
-          // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
-          const isNearEraser = stroke?.points?.some((p) =>
-            points.some((d) => {
-              const dx = (p.x || 0) - d.x;
-              const dy = (p.y || 0) - d.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-              return distance < deleteRadius;
-            })
-          );
-          return !isNearEraser;
-        });
+          console.log(newStrokes);
+          setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
 
-        setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
-
-        show();
-        setTriggerShow(true);
-        setRenderShow((prev) => prev + 1);
-      }
+          show();
+          setTriggerShow(true);
+          setRenderShow((prev) => prev + 1);
+        }
       setPoints([]);
-    };
+    }}};
 
     if (!canvas) return;
     canvas.addEventListener("pointerdown", handlePointerDown);
@@ -385,7 +392,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         lastpoints = { x: j.x, y: j.y };
       });
     });
-  }, [page, offset]);
+    console.log("Show", page.strokes);
+  }, [page, offset, zoom]);
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
@@ -430,7 +438,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     const { x: x2, y: y2 } = p2;
     const { x: a1, y: b1 } = q1;
     const { x: a2, y: b2 } = q2;
-    console.log("Huhu", p1, p2, q1, q2);
     const denominator = (p2.x - p1.x) * (q2.y - q1.y) - (p2.y - p1.y) * (q2.x - q1.x);
     // Parallel oder identisch → kein Schnittpunkt
     if (denominator === 0) {
