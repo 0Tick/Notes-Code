@@ -279,7 +279,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
                 q, 
                 oldDeletePoint.current[1]
               )
-              console.log("Hallo", temp);
+              if (temp) console.log("Huhu", temp)
             }
             oldDeletePoint.current = [p as NotesCode.Point, q]
             
@@ -431,18 +431,18 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     const { x: a1, y: b1 } = q1;
     const { x: a2, y: b2 } = q2;
     console.log("Huhu", p1, p2, q1, q2);
-    const denominator = (x2 - x1) * (b2 - b1) - (y2 - y1) * (a2 - a1);
+    const denominator = (p2.x - p1.x) * (q2.y - q1.y) - (p2.y - p1.y) * (q2.x - q1.x);
     // Parallel oder identisch → kein Schnittpunkt
     if (denominator === 0) {
       return false;
     }
 
-    const sNumerator = (y1 - b1) * (a2 - a1) - (x1 - a1) * (b2 - b1);
+    const sNumerator = (p1.y - q1.y) * (q2.x - q1.x) - (p1.x - q1.x) * (q2.y - q1.y);
     const s = sNumerator / denominator;
 
-    const tNumerator = (x1 + s * (x2 - x1) - a1);
-    const tDenominator = (a2 - a1);
-    const t = tDenominator !== 0 ? tNumerator / tDenominator : (y1 + s * (y2 - y1) - b1) / (b2 - b1);
+    const tNumerator = (p1.x + s * (p2.x - p1.x) - q1.x);
+    const tDenominator = (q2.x - q1.x);
+    const t = tDenominator !== 0 ? tNumerator / tDenominator : (p1.y + s * (p2.y - p1.y) - q1.y) / (q2.y - q1.y);
 
     if (s >= 0 && s <= 1 && t >= 0 && t <= 1) return true;
 
