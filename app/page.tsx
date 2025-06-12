@@ -357,7 +357,7 @@ export default function NotionClone() {
               <div className="w-6 h-6 bg-gray-500 rounded-md flex items-center justify-center text-xs cursor-pointer hover:bg-gray-600 transition">
                 S
               </div>
-              <span className="text-sm font-medium">Selo Inan's Notion</span>
+              <span className="text-sm font-medium">NotesCode</span>
               <ChevronDown className="h-3 w-3 cursor-pointer hover:text-gray-300" />
             </div>
           )}
@@ -421,24 +421,6 @@ export default function NotionClone() {
           </div>
 
           <div
-            className="flex items-center gap-2 p-2 rounded-md text-gray-400 hover:bg-[#333] cursor-pointer transition"
-            onClick={() => navigateTo("notion-ai")}
-          >
-            <Star className="h-4 w-4" />
-            {!sidebarCollapsed && <span className="text-sm">Notion AI</span>}
-          </div>
-
-          <div
-            className={`flex items-center gap-2 p-2 rounded-md hover:bg-[#333] cursor-pointer transition ${
-              activePage === "home" ? "bg-[#333] text-white" : "text-gray-400"
-            }`}
-            onClick={() => navigateTo("home")}
-          >
-            <Home className="h-4 w-4" />
-            {!sidebarCollapsed && <span className="text-sm">Home</span>}
-          </div>
-
-          <div
             className={`flex items-center gap-2 p-2 rounded-md hover:bg-[#333] cursor-pointer transition ${
               activePage === "inbox" ? "bg-[#333] text-white" : "text-gray-400"
             }`}
@@ -450,114 +432,7 @@ export default function NotionClone() {
         </div>
 
         {!sidebarCollapsed && (
-          <>
-            <div className="mt-4 px-3">
-              <div
-                className="flex items-center justify-between text-xs text-gray-500 mb-1 cursor-pointer hover:text-gray-400 transition"
-                onClick={toggleShared}
-              >
-                <span>Shared</span>
-                {sharedExpanded ? (
-                  <ChevronDown className="h-3 w-3" />
-                ) : (
-                  <ChevronRight className="h-3 w-3" />
-                )}
-              </div>
-
-              {sharedExpanded && (
-                <div className="space-y-1">
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "schuler-ai" ? "bg-[#333] text-white" : ""
-                    }`}
-                    onClick={() => navigateTo("schuler-ai")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>SchülerAI LMS</span>
-                  </div>
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "plastic-fikirler"
-                        ? "bg-[#333] text-white"
-                        : ""
-                    }`}
-                    onClick={() => navigateTo("plastic-fikirler")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Plastic Fikirler Mecmuasi</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 px-3">
-              <div
-                className="flex items-center justify-between text-xs text-gray-500 mb-1 cursor-pointer hover:text-gray-400 transition"
-                onClick={togglePrivate}
-              >
-                <span>Private</span>
-                {privateExpanded ? (
-                  <ChevronDown className="h-3 w-3" />
-                ) : (
-                  <ChevronRight className="h-3 w-3" />
-                )}
-              </div>
-
-              {privateExpanded && (
-                <div className="space-y-1">
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "quick-note" ? "bg-[#333] text-white" : ""
-                    }`}
-                    onClick={() => navigateTo("quick-note")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Quick Note</span>
-                  </div>
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "personal-home"
-                        ? "bg-[#333] text-white"
-                        : ""
-                    }`}
-                    onClick={() => navigateTo("personal-home")}
-                  >
-                    <Home className="h-4 w-4" />
-                    <span>Personal Home</span>
-                  </div>
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "reading-list"
-                        ? "bg-[#333] text-white"
-                        : ""
-                    }`}
-                    onClick={() => navigateTo("reading-list")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Reading List</span>
-                  </div>
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "schule" ? "bg-[#333] text-white" : ""
-                    }`}
-                    onClick={() => navigateTo("schule")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Schule</span>
-                  </div>
-                  <div
-                    className={`flex items-center gap-2 p-2 rounded-md text-gray-400 text-sm hover:bg-[#333] cursor-pointer transition ${
-                      activePage === "startup" ? "bg-[#333] text-white" : ""
-                    }`}
-                    onClick={() => navigateTo("startup")}
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>Startup</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
+          <></>
         )}
 
         <div className="mt-auto p-3 border-t border-[#333] flex items-center justify-between">
@@ -798,7 +673,7 @@ export default function NotionClone() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-8">
-          <h1 className="text-3xl font-bold mb-8">{greeting}, Selo Inan</h1>
+          <h1 className="text-3xl font-bold mb-8">{greeting}</h1>
           { directoryPickerAvailable && showDirectoryPicker !== undefined && (
             <>
               <Button

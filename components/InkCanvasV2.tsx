@@ -7,9 +7,11 @@ import React, {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  RefObject,
 } from "react";
 import { NotesCode } from "../handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
+import { ActionStack, Action } from "@/components/ActionStack";
 
 type CanvasProps = {
   defaultBackground?: string;
@@ -21,6 +23,7 @@ type CanvasProps = {
   setErasing?: React.Dispatch<React.SetStateAction<boolean>>; // Add setErase prop
   pageID: string | undefined; // Add page prop
   setPage?: React.Dispatch<React.SetStateAction<NotesCode.Document>>; // Add setPage prop
+  actionStack: RefObject<ActionStack>;
 };
 
 // Define the type for the exposed methods
@@ -35,8 +38,6 @@ export type InkCanvasV2Ref = {
   // Add other methods you might want to expose
 };
 
-
-
 // Wrap the component with forwardRef
 const InkCanvasV2: React.ForwardRefRenderFunction<
   InkCanvasV2Ref,
@@ -49,7 +50,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     penInputOnly = true,
     erasing = false,
     pageID, // Accept page prop
-    defaultBackground="#FFFFFF"
+    defaultBackground = "#FFFFFF",
+    actionStack,
   }: CanvasProps,
   ref: React.ForwardedRef<InkCanvasV2Ref>
 ) => {
@@ -96,13 +98,14 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   });
   const [drawing, setDrawing] = useState(false);
   const [points, setPoints] = useState<NotesCode.Point[]>([]);
-  // Remove internal page state: const [page, setPage] = useState<{strokes:Stroke[]}>({ strokes: [] });
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
   const [onlyPen, setOnlyPen] = useState(penInputOnly);
   const [erase, setErase] = useState(erasing);
-  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(undefined);
+  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
+    undefined
+  );
   const [triggerShow, setTriggerShow] = useState(false);
   const [renderShow, setRenderShow] = useState(0);
 
@@ -123,18 +126,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     // Expose other functions here
   }));
 
-  const setPage = useCallback(
-    (page: NotesCode.Document) => {
-      // debugger;
-      if (!currentPage || !pages) return;
-      let newPages = structuredClone(pages);
-      if (!newPages) return;
-      newPages.set(currentPage, page);
-      setPages(newPages);
-    },
-    [currentPage, pages]
-  );
-
   useEffect(() => {
     if (!currentPage || !pages) return;
     let page = pages.get(currentPage);
@@ -146,18 +137,43 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setStyle((prev) => ({
       ...prev,
       color: strokeColor,
-    }))
-  }, [strokeColor])
-
-  useEffect(() => {
-    console.log("Pages:", pages);
-    console.log("Current Page:", currentPage);
-    console.log("Page Doc:", page);
-  }, [pages, currentPage, page]);
+    }));
+  }, [strokeColor]);
 
   function erasePage() {
-    if (!setPage) return;
-    setPage(new NotesCode.Document({ strokes: [] }));
+    if (!actionStack.current) return;
+    class ErasePageAction implements Action {
+      type = "erasePage";
+      payload: { doc: NotesCode.Document | undefined; id: string } | undefined =
+        undefined;
+      execute(state: any) {
+        if (
+          !state.pages ||
+          !state.currentPage ||
+          state.currentPage === undefined
+        ) {
+          console.error("Unable to erase page: No pages or current page set.");
+          return;
+        }
+        this.payload = {
+          doc: state.pages.get(state.currentPage),
+          id: state.currentPage,
+        };
+        state.setPage(new NotesCode.Document({ strokes: [] })).then(() => {
+          setTriggerShow(true);
+          setRenderShow((prev) => prev + 1);
+        });
+      }
+      rollback(state: any) {
+        if (state.setPage && this.payload?.doc) {
+          state.setPage(structuredClone(this.payload?.doc), this.payload?.id).then(() => {
+            setTriggerShow(true);
+            setRenderShow((prev) => prev + 1);
+          });
+        }
+      }
+    }
+    actionStack.current?.addAction(new ErasePageAction());
   }
 
   // Canvas initialisieren und auf Fenstergröße reagieren
@@ -175,8 +191,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
 
         // Setze die Größe des Canvas basierend auf der Größe des Containers
         canvas.width = Math.min(containerWidth, width, window.innerWidth);
-        canvas.height =
-          Math.min(containerHeight, height, window.innerHeight);
+        canvas.height = Math.min(containerHeight, height, window.innerHeight);
       }
     };
     handleResize();
@@ -251,22 +266,51 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       lastPointRef.current = null;
       if (!erase) {
         let prev = pages.get(currentPage);
+        class AddStrokeAction implements Action {
+          type = "addStroke";
+          payload: { stroke: NotesCode.Stroke; id: string };
+          constructor(stroke: NotesCode.Stroke, id: string) {
+            this.payload = { stroke: stroke, id: id };
+          }
+          execute(state: {
+            setPage: (page: NotesCode.Document, id?: string) => void;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            page.strokes.push(this.payload.stroke);
+            state.setPage(page, this.payload.id);
+          }
+          rollback(state: {
+            setPage: (page: NotesCode.Document, id?: string) => void;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            page.strokes.splice(page.strokes.length - 1, 1);
+            state.setPage(page, this.payload.id);
+          }
+        }
+
         if (!prev) return;
-        setPage(
-          new NotesCode.Document({
-            strokes: [
-              ...prev.strokes,
-              new NotesCode.Stroke({
-                points: points,
-                color: style.color,
-                width: style.diameter,
-              }),
-            ],
-          })
+        actionStack.current.addAction(
+          new AddStrokeAction(
+            new NotesCode.Stroke({
+              points: points,
+              color: style.color,
+              width: style.diameter,
+            }),
+            currentPage
+          )
         );
       } else {
         const deleteRadius = 10; // oder abhängig vom Pressure/Style
-        const newStrokes = page.strokes.filter((stroke) => {
+        const deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[] = [];
+        const newStrokes: NotesCode.Stroke[] = [];
+        for (let i = 0; i < page.strokes.length; i++) {
+          const stroke = page.strokes[i];
           // Use page prop
           // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
           const isNearEraser = stroke?.points?.some((p) =>
@@ -277,14 +321,68 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
               return distance < deleteRadius;
             })
           );
-          return !isNearEraser;
-        });
-
-        setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
-
-        show();
-        setTriggerShow(true);
-        setRenderShow((prev) => prev + 1);
+          if (isNearEraser) {
+            deletedStrokes.push({ stroke: stroke as NotesCode.Stroke, idx: i });
+          } else {
+            newStrokes.push(stroke as NotesCode.Stroke);
+          }
+        }
+        class DeleteStrokesAction implements Action {
+          type = "deleteStrokes";
+          payload: {
+            deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[];
+            newStrokes: NotesCode.Stroke[];
+            id: string;
+          };
+          constructor(
+            deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[],
+            newStrokes: NotesCode.Stroke[],
+            id: string
+          ) {
+            this.payload = {
+              deletedStrokes: deletedStrokes,
+              newStrokes: newStrokes,
+              id: id,
+            };
+          }
+          execute(state: {
+            setPage: (page: NotesCode.Document, id?: string) => Promise<any>;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            let newPage = new NotesCode.Document({
+              ...page,
+              strokes: structuredClone(this.payload.newStrokes),
+            });
+            state.setPage(newPage, this.payload.id).then(() => {
+              setTriggerShow(true);
+              setRenderShow((prev) => prev + 1);
+            });
+          }
+          rollback(state: {
+            setPage: (page: NotesCode.Document, id?: string) => Promise<any>;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            // debugger;
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            let newPage = structuredClone(page);
+            this.payload.deletedStrokes.sort((a, b) => a.idx - b.idx);
+            for (let deleted of this.payload.deletedStrokes) {
+              newPage.strokes.splice(deleted.idx, 0, deleted.stroke);
+            }
+            state.setPage(newPage, this.payload.id).then(() => {
+              setTriggerShow(true);
+              setRenderShow((prev) => prev + 1);
+            });
+          }
+        }
+        actionStack.current.addAction(
+          new DeleteStrokesAction(deletedStrokes, newStrokes, currentPage)
+        );
       }
       setPoints([]);
     };
@@ -375,7 +473,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     if (zoom - 0.25 > 0) setZoom((prev) => prev - 0.25);
   }
 
-
   function handleOnlyPen() {
     // Toggles Touch and Mouse Inputs
     setOnlyPen(!onlyPen);
@@ -396,7 +493,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setRenderShow((prev) => prev + 1);
   }
 
-  function newZoom(value: number){
+  function newZoom(value: number) {
     setZoom(value);
   }
 
@@ -404,13 +501,9 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setErase((prev) => !prev);
   }
 
-
-
   useEffect(() => {
     setOnlyPen(penInputOnly);
   }, [penInputOnly]);
-
-  
 
   useEffect(() => {
     if (triggerShow) {
@@ -431,7 +524,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         width={width}
         style={{ display: "block", background: style.backgroundColor }}
       />
-      
     </div>
   );
 };
