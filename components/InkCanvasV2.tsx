@@ -107,6 +107,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [renderShow, setRenderShow] = useState(0);
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const oldDeletePoint = useRef<NotesCode.Point[]| null>(null);
 
   const zoomSpeed = 20;
   const deleteRange = 1;
@@ -266,6 +267,25 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         );
       } else {
         const deleteRadius = 10; // oder abhängig vom Pressure/Style
+        page.strokes.forEach((stroke) => {
+          stroke.points?.forEach(p => {
+            
+          points.forEach((q) => {
+            if (oldDeletePoint.current) {
+              
+              let temp = checkLineIntersection(
+                p as NotesCode.Point, 
+                oldDeletePoint.current[0], 
+                q, 
+                oldDeletePoint.current[1]
+              )
+              console.log("Hallo", temp);
+            }
+            oldDeletePoint.current = [p as NotesCode.Point, q]
+            
+          });
+          });
+        })
         const newStrokes = page.strokes.filter((stroke) => {
           // Use page prop
           // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
@@ -402,6 +422,31 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
 
   function toggleErase() {
     setErase((prev) => !prev);
+  }
+
+
+  function checkLineIntersection(p1: NotesCode.Point, p2:NotesCode.Point, q1: NotesCode.Point, q2: NotesCode.Point) {
+    const { x: x1, y: y1 } = p1;
+    const { x: x2, y: y2 } = p2;
+    const { x: a1, y: b1 } = q1;
+    const { x: a2, y: b2 } = q2;
+    console.log("Huhu", p1, p2, q1, q2);
+    const denominator = (x2 - x1) * (b2 - b1) - (y2 - y1) * (a2 - a1);
+    // Parallel oder identisch → kein Schnittpunkt
+    if (denominator === 0) {
+      return false;
+    }
+
+    const sNumerator = (y1 - b1) * (a2 - a1) - (x1 - a1) * (b2 - b1);
+    const s = sNumerator / denominator;
+
+    const tNumerator = (x1 + s * (x2 - x1) - a1);
+    const tDenominator = (a2 - a1);
+    const t = tDenominator !== 0 ? tNumerator / tDenominator : (y1 + s * (y2 - y1) - b1) / (b2 - b1);
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) return true;
+
+    return false;
   }
 
 
