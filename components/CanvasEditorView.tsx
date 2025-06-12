@@ -14,6 +14,8 @@ import InkCanvasV2, { InkCanvasV2Ref } from "./InkCanvasV2";
 import { NotesCode } from "@/handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
 import { PopoverPicker } from "@/components/popOverPicker";
+import { ActionStack } from "./ActionStack";
+import React from "react";
 
 export default function CanvasEditorView() {
   // Use the custom filesystem hook
@@ -59,6 +61,41 @@ export default function CanvasEditorView() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [erasing, setErasing] = useState(false);
+  const setPage = useCallback(
+    (page: NotesCode.Document, id?: string) => {
+      if (!id) id = currentPage;
+      if (!id || !pages) return;
+      let newPages = structuredClone(pages);
+      if (!newPages) return;
+      newPages.set(id, page);
+      return Promise.resolve(setPages(newPages));
+    },
+    [currentPage, pages]
+  );
+  const actionStackRef = useRef<ActionStack>(
+    new ActionStack(10, {
+      pages: pages,
+      currentPage: currentPage,
+      setPage: setPage,
+    })
+  );
+  useEffect(() => {
+    document.addEventListener("keyup", function (event) {
+      if (event.ctrlKey && event.key === "z") {
+        actionStackRef.current.undo();
+        event.preventDefault();
+      } else if (event.ctrlKey && event.key === "y") {
+        actionStackRef.current.redo();
+        event.preventDefault();
+      }
+    });
+  }, []);
+  useEffect(() => {
+    actionStackRef.current.state.pages = pages;
+    actionStackRef.current.state.currentPage = currentPage;
+    actionStackRef.current.state.setPage = setPage;
+  }, [pages, currentPage, setPage]);
+
   // Navigation handlers
   const prevPageHandler = () => {
     if (currentPage === undefined || notebookConfig === undefined) return;
@@ -116,11 +153,7 @@ export default function CanvasEditorView() {
     }
   }, [currentPage]);
   const clearPageHandler = useCallback(() => {
-    if (currentPage === undefined) return;
-    let newPages = structuredClone(pages);
-    if (!newPages) return;
-    newPages.set(currentPage, new NotesCode.Document());
-    setPages(newPages);
+    return canvasRef.current?.clearCanvas();
   }, [currentPage, pages]);
   const closeAppHandler = () => {
     setIsNotesAppVisible(false);
@@ -262,20 +295,29 @@ export default function CanvasEditorView() {
             >
               🧽
             </button>
-            <PopoverPicker
-              color={strokeColor}
-              onChange={
-                setStrokeColor
-              }
-            />
+            <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
             <button
-              onClick={() => setErasing(!erasing)}
+              onClick={() => setErasing((prev) => !prev)}
               title={erasing ? "Disable Eraser" : "Enable Eraser"}
-              className={`bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500 ${
-                erasing ? "bg-red-500" : ""
+              className={`ml-2 text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 ${
+                erasing ? "bg-red-500" : "bg-zinc-700"
               }`}
             >
               🩹
+            </button>
+            <button
+              onClick={() => actionStackRef.current.undo()}
+              title="Undo"
+              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
+            >
+              ↩️
+            </button>
+            <button
+              onClick={() => actionStackRef.current.redo()}
+              title="Redo"
+              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
+            >
+              ↪️
             </button>
             <button
               onClick={closeAppHandler}
@@ -296,6 +338,7 @@ export default function CanvasEditorView() {
                 height={500}
                 strokeDiameter={10}
                 penInputOnly={false}
+                actionStack={actionStackRef}
               />
             </div>
           </div>
