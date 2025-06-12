@@ -395,6 +395,10 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     console.log("Show", page.strokes);
   }, [page, offset, zoom]);
 
+  useEffect(() => {
+    show();
+  }, [page, offset, zoom])
+
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
   }
