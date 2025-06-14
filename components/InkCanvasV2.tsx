@@ -35,8 +35,6 @@ export type InkCanvasV2Ref = {
   // Add other methods you might want to expose
 };
 
-
-
 // Wrap the component with forwardRef
 const InkCanvasV2: React.ForwardRefRenderFunction<
   InkCanvasV2Ref,
@@ -49,7 +47,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     penInputOnly = true,
     erasing = false,
     pageID, // Accept page prop
-    defaultBackground="#FFFFFF"
+    defaultBackground = "#FFFFFF",
   }: CanvasProps,
   ref: React.ForwardedRef<InkCanvasV2Ref>
 ) => {
@@ -102,7 +100,9 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [presenter, setPresenter] = useState(null);
   const [onlyPen, setOnlyPen] = useState(penInputOnly);
   const [erase, setErase] = useState(erasing);
-  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(undefined);
+  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
+    undefined
+  );
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const dontShow = useRef(false);
@@ -144,8 +144,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setStyle((prev) => ({
       ...prev,
       color: strokeColor,
-    }))
-  }, [strokeColor])
+    }));
+  }, [strokeColor]);
 
   useEffect(() => {
     console.log("Pages:", pages);
@@ -173,8 +173,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
 
         // Setze die Größe des Canvas basierend auf der Größe des Containers
         canvas.width = Math.min(containerWidth, width, window.innerWidth);
-        canvas.height =
-          Math.min(containerHeight, height, window.innerHeight);
+        canvas.height = Math.min(containerHeight, height, window.innerHeight);
       }
     };
     handleResize();
@@ -269,48 +268,32 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           for (let i = 1; i < points.length; i++) {
             eraserSegments.push([points[i - 1], points[i]]);
           }
-
           const newStrokes = page.strokes.filter((stroke) => {
             if (!stroke.points || stroke.points.length < 2) return true;
             for (let i = 1; i < stroke.points.length; i++) {
               const strokeSegStart = stroke.points[i - 1];
               const strokeSegEnd = stroke.points[i];
               for (const [eStart, eEnd] of eraserSegments) {
-                if (checkLineIntersection(strokeSegStart as NotesCode.Point, strokeSegEnd as NotesCode.Point, eStart, eEnd)) {
+                if (
+                  checkLineIntersection(
+                    strokeSegStart as NotesCode.Point,
+                    strokeSegEnd as NotesCode.Point,
+                    eStart,
+                    eEnd
+                  )
+                ) {
                   return false; // Schnitt gefunden → stroke löschen
                 }
               }
             }
             return true; // kein Schnitt → stroke behalten
           });
-          if (erase && points.length >= 2) {
-            const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
-            for (let i = 1; i < points.length; i++) {
-              eraserSegments.push([points[i - 1], points[i]]);
-          }
-          console.log(eraserSegments);
-          const newStrokes = page.strokes.filter((stroke) => {
-            if (!stroke.points || stroke.points.length < 2) return true;
-            for (let i = 1; i < stroke.points.length; i++) {
-              const strokeSegStart = stroke.points[i - 1];
-              const strokeSegEnd = stroke.points[i];
-              for (const [eStart, eEnd] of eraserSegments) {
-                if (checkLineIntersection(strokeSegStart as NotesCode.Point, strokeSegEnd as NotesCode.Point, eStart, eEnd)) {
-                  console.log("Schnitt");
-                  return false; // Schnitt gefunden → stroke löschen
-                }
-              }
-            }
-            console.log("Kein Schnitt");
-            return true; // kein Schnitt → stroke behalten
-          });
-          console.log(newStrokes);
           setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
 
-          
+          setPoints([]);
         }
-      setPoints([]);
-    }}};
+      }
+    };
 
     if (!canvas) return;
     canvas.addEventListener("pointerdown", handlePointerDown);
@@ -345,7 +328,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           prev.y +
           (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
-      
+
       event.preventDefault();
     };
     if (!canvas) return;
@@ -388,7 +371,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       return;
     }
     show();
-  }, [page, offset, zoom])
+  }, [page, offset, zoom]);
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
@@ -397,7 +380,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   function decreaseZoom() {
     if (zoom - 0.25 > 0) setZoom((prev) => prev - 0.25);
   }
-
 
   function handleOnlyPen() {
     // Toggles Touch and Mouse Inputs
@@ -417,7 +399,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setOffset({ x: 0, y: 1 });
   }
 
-  function newZoom(value: number){
+  function newZoom(value: number) {
     setZoom(value);
   }
 
@@ -425,24 +407,33 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setErase((prev) => !prev);
   }
 
-
-  function checkLineIntersection(p1: NotesCode.Point, p2:NotesCode.Point, q1: NotesCode.Point, q2: NotesCode.Point) {
+  function checkLineIntersection(
+    p1: NotesCode.Point,
+    p2: NotesCode.Point,
+    q1: NotesCode.Point,
+    q2: NotesCode.Point
+  ) {
     const { x: x1, y: y1 } = p1;
     const { x: x2, y: y2 } = p2;
     const { x: a1, y: b1 } = q1;
     const { x: a2, y: b2 } = q2;
-    const denominator = (p2.x - p1.x) * (q2.y - q1.y) - (p2.y - p1.y) * (q2.x - q1.x);
+    const denominator =
+      (p2.x - p1.x) * (q2.y - q1.y) - (p2.y - p1.y) * (q2.x - q1.x);
     // Parallel oder identisch → kein Schnittpunkt
     if (denominator === 0) {
       return false;
     }
 
-    const sNumerator = (p1.y - q1.y) * (q2.x - q1.x) - (p1.x - q1.x) * (q2.y - q1.y);
+    const sNumerator =
+      (p1.y - q1.y) * (q2.x - q1.x) - (p1.x - q1.x) * (q2.y - q1.y);
     const s = sNumerator / denominator;
 
-    const tNumerator = (p1.x + s * (p2.x - p1.x) - q1.x);
-    const tDenominator = (q2.x - q1.x);
-    const t = tDenominator !== 0 ? tNumerator / tDenominator : (p1.y + s * (p2.y - p1.y) - q1.y) / (q2.y - q1.y);
+    const tNumerator = p1.x + s * (p2.x - p1.x) - q1.x;
+    const tDenominator = q2.x - q1.x;
+    const t =
+      tDenominator !== 0
+        ? tNumerator / tDenominator
+        : (p1.y + s * (p2.y - p1.y) - q1.y) / (q2.y - q1.y);
 
     if (s >= 0 && s <= 1 && t >= 0 && t <= 1) return true;
 
@@ -465,7 +456,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         width={width}
         style={{ display: "block", background: style.backgroundColor }}
       />
-      
     </div>
   );
 };
