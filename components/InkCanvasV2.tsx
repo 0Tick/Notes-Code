@@ -106,13 +106,16 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
     undefined
   );
+  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
+    undefined
+  );
   const [triggerShow, setTriggerShow] = useState(false);
   const [renderShow, setRenderShow] = useState(0);
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const dontShow = useRef(false);
 
   const zoomSpeed = 20;
-  const deleteRange = 1;
 
   // Use useImperativeHandle to expose methods
   useImperativeHandle(ref, () => ({
@@ -265,6 +268,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       if (!drawing || !pages || !currentPage || !page) return;
       lastPointRef.current = null;
       if (!erase) {
+        dontShow.current = true;
         let prev = pages.get(currentPage);
         class AddStrokeAction implements Action {
           type = "addStroke";
@@ -384,7 +388,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           new DeleteStrokesAction(deletedStrokes, newStrokes, currentPage)
         );
       }
-      setPoints([]);
     };
 
     if (!canvas) return;
@@ -420,21 +423,13 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           prev.y +
           (event.deltaY < 0 ? zoomSpeed : event.deltaY > 0 ? -zoomSpeed : 0),
       }));
-      setTriggerShow(true);
-      setRenderShow((prev) => prev + 1);
+
       event.preventDefault();
     };
     if (!canvas) return;
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, [offset]);
-
-  // Offset-Änderung triggert show()
-  useEffect(() => {
-    setTriggerShow(true);
-    setRenderShow((prev) => prev + 1);
-    // eslint-disable-next-line
-  }, [offset, zoom, pages, currentPage]); // Add page to dependencies
 
   function calculateThickness(pressure: number) {
     return style.diameter * pressure;
@@ -463,7 +458,15 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         lastpoints = { x: j.x, y: j.y };
       });
     });
-  }, [page, offset]);
+  }, [page, offset, zoom]);
+
+  useEffect(() => {
+    if (dontShow.current) {
+      dontShow.current = false;
+      return;
+    }
+    show();
+  }, [page, offset, zoom]);
 
   function increaseZoom() {
     setZoom((prev) => prev + 0.25);
@@ -489,8 +492,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   function resetPosition() {
     setZoom(1);
     setOffset({ x: 0, y: 1 });
-    setTriggerShow(true);
-    setRenderShow((prev) => prev + 1);
   }
 
   function newZoom(value: number) {
@@ -501,16 +502,42 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     setErase((prev) => !prev);
   }
 
+  function checkLineIntersection(
+    p1: NotesCode.Point,
+    p2: NotesCode.Point,
+    q1: NotesCode.Point,
+    q2: NotesCode.Point
+  ) {
+    const { x: x1, y: y1 } = p1;
+    const { x: x2, y: y2 } = p2;
+    const { x: a1, y: b1 } = q1;
+    const { x: a2, y: b2 } = q2;
+    const denominator =
+      (p2.x - p1.x) * (q2.y - q1.y) - (p2.y - p1.y) * (q2.x - q1.x);
+    // Parallel oder identisch → kein Schnittpunkt
+    if (denominator === 0) {
+      return false;
+    }
+
+    const sNumerator =
+      (p1.y - q1.y) * (q2.x - q1.x) - (p1.x - q1.x) * (q2.y - q1.y);
+    const s = sNumerator / denominator;
+
+    const tNumerator = p1.x + s * (p2.x - p1.x) - q1.x;
+    const tDenominator = q2.x - q1.x;
+    const t =
+      tDenominator !== 0
+        ? tNumerator / tDenominator
+        : (p1.y + s * (p2.y - p1.y) - q1.y) / (q2.y - q1.y);
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) return true;
+
+    return false;
+  }
+
   useEffect(() => {
     setOnlyPen(penInputOnly);
   }, [penInputOnly]);
-
-  useEffect(() => {
-    if (triggerShow) {
-      show();
-      setTriggerShow(false);
-    }
-  }, [triggerShow, renderShow]);
 
   useEffect(() => {
     setErase(erasing);
