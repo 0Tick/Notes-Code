@@ -106,11 +106,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
     undefined
   );
-  const [page, setPageDoc] = useState<NotesCode.Document | undefined>(
-    undefined
-  );
-  const [triggerShow, setTriggerShow] = useState(false);
-  const [renderShow, setRenderShow] = useState(0);
 
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const dontShow = useRef(false);
@@ -149,6 +144,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       type = "erasePage";
       payload: { doc: NotesCode.Document | undefined; id: string } | undefined =
         undefined;
+      prev = null;
+      next = null;
       execute(state: any) {
         if (
           !state.pages ||
@@ -162,17 +159,11 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           doc: state.pages.get(state.currentPage),
           id: state.currentPage,
         };
-        state.setPage(new NotesCode.Document({ strokes: [] })).then(() => {
-          setTriggerShow(true);
-          setRenderShow((prev) => prev + 1);
-        });
+        state.setPage(new NotesCode.Document({ strokes: [] }));
       }
       rollback(state: any) {
         if (state.setPage && this.payload?.doc) {
-          state.setPage(structuredClone(this.payload?.doc), this.payload?.id).then(() => {
-            setTriggerShow(true);
-            setRenderShow((prev) => prev + 1);
-          });
+          state.setPage(structuredClone(this.payload?.doc), this.payload?.id);
         }
       }
     }
@@ -276,6 +267,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
           constructor(stroke: NotesCode.Stroke, id: string) {
             this.payload = { stroke: stroke, id: id };
           }
+          prev = null;
+          next = null;
           execute(state: {
             setPage: (page: NotesCode.Document, id?: string) => void;
             pages: Map<string, NotesCode.Document>;
@@ -283,7 +276,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
             if (!state.setPage || !state.pages) return;
             let page = state.pages.get(this.payload.id);
             if (!page) return;
-            page.strokes.push(this.payload.stroke);
+            page = structuredClone(page);
+            page.strokes.push(structuredClone(this.payload.stroke));
             state.setPage(page, this.payload.id);
           }
           rollback(state: {
@@ -293,6 +287,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
             if (!state.setPage || !state.pages) return;
             let page = state.pages.get(this.payload.id);
             if (!page) return;
+            page = structuredClone(page);
             page.strokes.splice(page.strokes.length - 1, 1);
             state.setPage(page, this.payload.id);
           }
@@ -333,6 +328,8 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         }
         class DeleteStrokesAction implements Action {
           type = "deleteStrokes";
+          prev = null;
+          next = null;
           payload: {
             deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[];
             newStrokes: NotesCode.Stroke[];
@@ -360,16 +357,12 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
               ...page,
               strokes: structuredClone(this.payload.newStrokes),
             });
-            state.setPage(newPage, this.payload.id).then(() => {
-              setTriggerShow(true);
-              setRenderShow((prev) => prev + 1);
-            });
+            state.setPage(newPage, this.payload.id);
           }
           rollback(state: {
             setPage: (page: NotesCode.Document, id?: string) => Promise<any>;
             pages: Map<string, NotesCode.Document>;
           }) {
-            // debugger;
             if (!state.setPage || !state.pages) return;
             let page = state.pages.get(this.payload.id);
             if (!page) return;
@@ -378,10 +371,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
             for (let deleted of this.payload.deletedStrokes) {
               newPage.strokes.splice(deleted.idx, 0, deleted.stroke);
             }
-            state.setPage(newPage, this.payload.id).then(() => {
-              setTriggerShow(true);
-              setRenderShow((prev) => prev + 1);
-            });
+            state.setPage(newPage, this.payload.id);
           }
         }
         actionStack.current.addAction(
