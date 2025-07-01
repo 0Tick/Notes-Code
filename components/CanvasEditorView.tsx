@@ -13,7 +13,33 @@ import { useFilesystem } from "@/hooks/use-filesystem";
 import InkCanvasV2, { InkCanvasV2Ref } from "./InkCanvasV2";
 import { NotesCode } from "@/handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
+import { toast } from "@/hooks/use-toast";
 import { PopoverPicker } from "@/components/popOverPicker";
+import { Button } from "@/components/ui/button";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Trash2,
+  Save,
+  RotateCcw,
+  X,
+  Home,
+  PenTool,
+  Eraser,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function CanvasEditorView() {
   // Use the custom filesystem hook
@@ -59,6 +85,23 @@ export default function CanvasEditorView() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [erasing, setErasing] = useState(false);
+  const [clickedButton, setClickedButton] = useState<string | null>(null);
+
+  // Button click animation handler
+  const handleButtonClick = (buttonId: string, callback?: () => void) => {
+    setClickedButton(buttonId);
+    setTimeout(() => setClickedButton(null), 200);
+    if (callback) callback();
+  };
+
+  // Get button classes with animation
+  const getButtonClasses = (buttonId: string, baseClasses: string) => {
+    const isClicked = clickedButton === buttonId;
+    return `${baseClasses} transition-all duration-200 ${
+      isClicked ? 'scale-110 bg-blue-500 text-white shadow-lg shadow-blue-500/50' : ''
+    }`;
+  };
+
   // Navigation handlers
   const prevPageHandler = () => {
     if (currentPage === undefined || notebookConfig === undefined) return;
@@ -90,29 +133,93 @@ export default function CanvasEditorView() {
   };
   const addFirstHandler = async (e: React.MouseEvent) => {
     e.preventDefault();
-    await createPage(undefined, { insert: "first" });
+    handleButtonClick('addFirst');
+    try {
+      await createPage(undefined, { insert: "first" });
+      toast({
+        title: "Page added",
+        description: "New page added as first page",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add page",
+        variant: "destructive",
+      });
+    }
     setIsDropdownOpen(false);
   };
   const addLastHandler = async (e: React.MouseEvent) => {
     e.preventDefault();
-    createPage(undefined, { insert: "last" });
+    handleButtonClick('addLast');
+    try {
+      await createPage(undefined, { insert: "last" });
+      toast({
+        title: "Page added",
+        description: "New page added as last page",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add page",
+        variant: "destructive",
+      });
+    }
     setIsDropdownOpen(false);
   };
   const addAfterHandler = async (e: React.MouseEvent) => {
     e.preventDefault();
-    createPage(undefined, { insert: "after" });
+    handleButtonClick('addAfter');
+    try {
+      await createPage(undefined, { insert: "after" });
+      toast({
+        title: "Page added",
+        description: "New page added after current page",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add page",
+        variant: "destructive",
+      });
+    }
     setIsDropdownOpen(false);
   };
   const addBeforeHandler = async (e: React.MouseEvent) => {
     e.preventDefault();
-    createPage(undefined, { insert: "before" });
+    handleButtonClick('addBefore');
+    try {
+      await createPage(undefined, { insert: "before" });
+      toast({
+        title: "Page added",
+        description: "New page added before current page",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add page",
+        variant: "destructive",
+      });
+    }
     setIsDropdownOpen(false);
   };
 
   // Delete/clear/close
   const deletePageHandler = useCallback(async () => {
     if (currentPage) {
-      return await deletePage(currentPage);
+      try {
+        await deletePage(currentPage);
+        toast({
+          title: "Page deleted",
+          description: "Current page has been deleted",
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete page",
+          variant: "destructive",
+        });
+      }
     }
   }, [currentPage]);
   const clearPageHandler = useCallback(() => {
@@ -121,6 +228,10 @@ export default function CanvasEditorView() {
     if (!newPages) return;
     newPages.set(currentPage, new NotesCode.Document());
     setPages(newPages);
+    toast({
+      title: "Page cleared",
+      description: "All content has been removed from the current page",
+    });
   }, [currentPage, pages]);
   const closeAppHandler = () => {
     setIsNotesAppVisible(false);
@@ -128,9 +239,20 @@ export default function CanvasEditorView() {
   };
 
   const savePageHandler = () => {
-    //debugger;
     if (currentPage === undefined) return;
-    savePage(currentPage);
+    try {
+      savePage(currentPage);
+      toast({
+        title: "Page saved",
+        description: "Current page has been saved successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save page",
+        variant: "destructive",
+      });
+    }
   };
 
   // Dropdown close on outside click
@@ -154,155 +276,253 @@ export default function CanvasEditorView() {
   if (!isNotesAppVisible) return <></>;
   if (pages === undefined || (currentPage !== undefined && pages.size === 0)) {
     return (
-      <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
-        <div className="text-center text-zinc-400 p-8">Loading...</div>
+      <div className="flex h-screen bg-[#191919] text-white">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-gray-400 p-8">Loading...</div>
+        </div>
       </div>
     );
   }
   if (pages !== undefined && pages?.size === 0) {
     return (
-      <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
-        <div className="text-center text-zinc-400 p-8">No page loaded.</div>
+      <div className="flex h-screen bg-[#191919] text-white">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-gray-400 p-8">No page loaded.</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
-      <div className="app-container font-sans bg-zinc-800 w-full h-full flex flex-col overflow-hidden">
-        <header className="app-header bg-sky-600 text-white p-3 text-center border-b border-zinc-700 shrink-0">
-          <h1 className="m-0 text-xl">Notes Code</h1>
-        </header>
-        <main className="main-content p-3 flex flex-col flex-grow overflow-y-auto">
-          <div className="controls toolbar-controls flex justify-start items-center px-2 py-1.5 bg-zinc-800 rounded-md mb-2 border-b border-zinc-700 shrink-0">
-            <button
-              onClick={prevPageHandler}
-              title="Previous Page"
-              disabled={!hasPrevPage}
-              className={`bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500 ${
-                !hasPrevPage ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              &#x2190;
-            </button>
-            <button
-              onClick={nextPageHandler}
-              title="Next Page"
-              disabled={!hasNextPage}
-              className={`bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500 ${
-                !hasNextPage ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              &#x2192;
-            </button>
-            <div className="dropdown relative inline-block">
-              <button
-                ref={addPageBtnRef}
-                onClick={addPageBtnHandler}
-                className="dropdown-btn bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
-                title="Add Page"
-              >
-                +
-              </button>
-              {isDropdownOpen && (
-                <div
-                  ref={addPageDropdownRef}
-                  className="dropdown-content absolute bg-zinc-700 min-w-[160px] shadow-lg z-[100] rounded-md top-full left-0 mt-1"
+    <div className="flex h-screen bg-[#191919] text-white">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="border-b border-[#333] p-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={getButtonClasses('home', "text-gray-400 hover:text-white hover:bg-[#333]")}
+                    onClick={() => handleButtonClick('home', closeAppHandler)}
+                  >
+                    <Home className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Back to Home</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <h1 className="text-xl font-semibold">Notes Code</h1>
+          </div>
+          
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick('prev', prevPageHandler)}
+                    disabled={!hasPrevPage}
+                    className={getButtonClasses('prev', "text-gray-400 hover:text-white hover:bg-[#333] disabled:opacity-50 disabled:cursor-not-allowed")}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Previous Page</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick('next', nextPageHandler)}
+                    disabled={!hasNextPage}
+                    className={getButtonClasses('next', "text-gray-400 hover:text-white hover:bg-[#333] disabled:opacity-50 disabled:cursor-not-allowed")}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Next Page</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  ref={addPageBtnRef}
+                  variant="ghost"
+                  size="sm"
+                  className={getButtonClasses('addPage', "text-gray-400 hover:text-white hover:bg-[#333]")}
+                  onClick={() => handleButtonClick('addPage')}
                 >
-                  <a
-                    href="#"
-                    onClick={addFirstHandler}
-                    className="text-zinc-200 px-3 py-2 block border-b border-zinc-600 text-sm hover:bg-sky-600 hover:text-white"
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-[#333] border-[#444] text-white">
+                <DropdownMenuItem
+                  onClick={addFirstHandler}
+                  className="hover:bg-[#444] cursor-pointer"
+                >
+                  Add as First
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={addLastHandler}
+                  className="hover:bg-[#444] cursor-pointer"
+                >
+                  Add as Last
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={addAfterHandler}
+                  className="hover:bg-[#444] cursor-pointer"
+                >
+                  Add After Current
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={addBeforeHandler}
+                  className="hover:bg-[#444] cursor-pointer"
+                >
+                  Add Before Current
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="border-b border-[#333] p-3 flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleButtonClick('save', savePageHandler)}
+                  className={getButtonClasses('save', "text-gray-400 hover:text-white hover:bg-[#333]")}
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[#333] text-white border-[#444]">
+                <p>Save Page</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleButtonClick('clear', clearPageHandler)}
+                  className={getButtonClasses('clear', "text-gray-400 hover:text-white hover:bg-[#333]")}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[#333] text-white border-[#444]">
+                <p>Clear Page</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleButtonClick('delete', deletePageHandler)}
+                  className={getButtonClasses('delete', "text-gray-400 hover:text-white hover:bg-[#333]")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="bg-[#333] text-white border-[#444]">
+                <p>Delete Page</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <div className="h-4 w-px bg-[#333] mx-2" />
+
+          <div className="flex items-center gap-2">
+            <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick('pencil', () => setErasing(false))}
+                    className={getButtonClasses('pencil', `${
+                      !erasing 
+                        ? "bg-blue-600 text-white hover:bg-blue-700" 
+                        : "text-gray-400 hover:text-white hover:bg-[#333]"
+                    }`)}
                   >
-                    Add as First
-                  </a>
-                  <a
-                    href="#"
-                    onClick={addLastHandler}
-                    className="text-zinc-200 px-3 py-2 block border-b border-zinc-600 text-sm hover:bg-sky-600 hover:text-white"
+                    <PenTool className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Switch to Drawing Tool</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick('eraser', () => setErasing(true))}
+                    className={getButtonClasses('eraser', `${
+                      erasing 
+                        ? "bg-red-600 text-white hover:bg-red-700" 
+                        : "text-gray-400 hover:text-white hover:bg-[#333]"
+                    }`)}
                   >
-                    Add as Last
-                  </a>
-                  <a
-                    href="#"
-                    onClick={addAfterHandler}
-                    className="text-zinc-200 px-3 py-2 block text-sm hover:bg-sky-600 hover:text-white last:border-b-0"
-                  >
-                    Add After Current
-                  </a>
-                  <a
-                    href="#"
-                    onClick={addBeforeHandler}
-                    className="text-zinc-200 px-3 py-2 block text-sm hover:bg-sky-600 hover:text-white last:border-b-0"
-                  >
-                    Add Before Current
-                  </a>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={deletePageHandler}
-              title="Delete Page"
-              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
-            >
-              &#x1F5D1;
-            </button>
-            <button
-              onClick={savePageHandler}
-              title="Save Page"
-              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
-            >
-              {" "}
-              &#x1F4BE;
-            </button>
-            <button
-              onClick={clearPageHandler}
-              title="Clear Page"
-              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500"
-            >
-              🧽
-            </button>
-            <PopoverPicker
-              color={strokeColor}
-              onChange={
-                setStrokeColor
-              }
+                    <Eraser className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Switch to Eraser Tool</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+
+        {/* Canvas Area */}
+        <div className="flex-1 p-6 overflow-hidden">
+          <div className="h-full bg-white rounded-lg border border-[#333] overflow-hidden">
+            <InkCanvasV2
+              ref={canvasRef as React.Ref<InkCanvasV2Ref>}
+              pageID={currentPage}
+              erasing={erasing}
+              defaultBackground="#FFFFFF"
+              width={100000}
+              height={50000}
+              strokeDiameter={10}
+              penInputOnly={false}
             />
-            <button
-              onClick={() => setErasing(!erasing)}
-              title={erasing ? "Disable Eraser" : "Enable Eraser"}
-              className={`bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base mr-1 hover:bg-zinc-700 hover:text-sky-500 ${
-                erasing ? "bg-red-500" : ""
-              }`}
-            >
-              🩹
-            </button>
-            <button
-              onClick={closeAppHandler}
-              title="Close Notes"
-              className="bg-transparent text-zinc-200 border-none p-2 rounded cursor-pointer text-base ml-auto hover:bg-red-600 hover:text-white"
-            >
-              &#x2715;
-            </button>
           </div>
-          <div className="viewport bg-zinc-700/30 border border-zinc-600 rounded-md mb-0 flex flex-col flex-grow">
-            <div className="page-content flex-grow p-2.5 flex flex-col">
-              <InkCanvasV2
-                ref={canvasRef as React.Ref<InkCanvasV2Ref>}
-                pageID={currentPage}
-                erasing={erasing}
-                defaultBackground="#222222"
-                width={1000}
-                height={500}
-                strokeDiameter={10}
-                penInputOnly={false}
-              />
-            </div>
-          </div>
-        </main>
-        <footer className="app-footer text-center p-2 bg-zinc-800 text-zinc-400 text-xs border-t border-zinc-700 shrink-0">
-          <p className="m-0">&copy; 2025 Notes Code Demo</p>
-        </footer>
+        </div>
       </div>
     </div>
   );
