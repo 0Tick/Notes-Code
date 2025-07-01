@@ -1,51 +1,46 @@
 export class ActionStack {
-  private actions: Action[];
-  private currentIndex: number = -1;
+  private current: Action | null = null;
   private maxActions: number = 10;
   public state: any;
+  private first: Action | null = null;
 
   constructor(maxActions: number = 10, state: any) {
     this.maxActions = maxActions;
     this.state = state;
-    this.actions = [];
   }
 
   addAction(action: Action): void {
-    if (this.actions.length === 0) {
-      this.actions.push(action);
-      this.currentIndex = 1;
+    if (this.current === null) {
+      this.current = action;
+      this.first = action;
     } else {
-      this.actions.length = this.currentIndex>=0?this.currentIndex:0;
-      this.actions.push(action);
-      if (this.actions.length > this.maxActions) {
-        this.actions.shift();
-      }
-      this.currentIndex = this.actions.length;
+      this.current.next = action;
+      action.prev = this.current;
+      this.current = action;
     }
     action.execute(this.state);
   }
   undo(): void {
-    if (this.currentIndex === -1) {
+    if (this.current === null) {
       return;
-    } else if (this.currentIndex === this.actions.length) {
-      this.currentIndex--;
+    } else {
+      this.current.rollback(this.state);
+      this.current = this.current.prev;
     }
-    this.actions[this.currentIndex].rollback(this.state);
-    this.currentIndex--;
   }
   redo(): void {
-    if (
-      this.currentIndex === 0 ||
-      this.actions.length == 0 ||
-      this.currentIndex === this.actions.length
-    ) {
+    if (this.current === null) {
+      if (this.first !== null) {
+        this.current = this.first;
+        this.current.execute(this.state);
+      }
+      return
+    }
+    else if (this.current.next === null) {
       return;
-    } else if (this.currentIndex === -1 || this.actions.length === 1) {
-      this.actions[0].execute(this.state);
-      this.currentIndex = 1;
     } else {
-      this.actions[this.currentIndex].execute(this.state);
-      this.currentIndex++;
+      this.current.next.execute(this.state);
+      this.current = this.current.next;
     }
   }
 }
@@ -55,4 +50,6 @@ export interface Action {
   payload: any;
   execute: (state: any) => void;
   rollback: (state: any) => void;
+  next: Action | null;
+  prev: Action | null;
 }
