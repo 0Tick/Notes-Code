@@ -13,8 +13,6 @@ import { useFilesystemContext } from "@/components/filesystem-provider";
 
 type CanvasProps = {
   defaultBackground?: string;
-  height?: number;
-  width?: number;
   strokeDiameter?: number;
   penInputOnly?: boolean;
   erasing?: boolean;
@@ -41,8 +39,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   CanvasProps
 > = (
   {
-    width = 1000,
-    height = 500,
     strokeDiameter = 10,
     penInputOnly = true,
     erasing = false,
@@ -171,15 +167,16 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
 
+        canvas.width = containerWidth;
+        canvas.height = containerHeight;
         // Setze die Größe des Canvas basierend auf der Größe des Containers
-        canvas.width = Math.min(containerWidth, width, window.innerWidth);
-        canvas.height = Math.min(containerHeight, height, window.innerHeight);
+        console.log(containerWidth, containerHeight);
       }
     };
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [width, height]);
+  }, []);
 
   // Ink-API Presenter anfordern (wenn verfügbar)
   useEffect(() => {
@@ -449,12 +446,15 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   }, [erasing]);
 
   return (
-    <div>
+    <div style={{width: "100%", height: "100%"}}>
       <canvas
         ref={canvasRef}
-        height={height}
-        width={width}
-        style={{ display: "block", background: style.backgroundColor }}
+        style={{ 
+          display: "block", 
+          background: style.backgroundColor,
+          width: "auto",
+          height: "auto"
+        }}
       />
     </div>
   );

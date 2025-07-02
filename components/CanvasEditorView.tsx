@@ -285,15 +285,13 @@ export default function CanvasEditorView() {
               &#x2715;
             </button>
           </div>
-          <div className="viewport bg-zinc-700/30 border border-zinc-600 rounded-md mb-0 flex flex-col flex-grow">
+          <div className="viewport bg-zinc-700/30 border border-zinc-600 rounded-md  flex flex-col flex-grow">
             <div className="page-content flex-grow p-2.5 flex flex-col">
               <InkCanvasV2
                 ref={canvasRef as React.Ref<InkCanvasV2Ref>}
                 pageID={currentPage}
                 erasing={erasing}
-                defaultBackground="#222222"
-                width={1000}
-                height={500}
+                defaultBackground="#FF2222"
                 strokeDiameter={10}
                 penInputOnly={false}
               />
