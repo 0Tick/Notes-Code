@@ -7,9 +7,11 @@ import React, {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  RefObject,
 } from "react";
 import { NotesCode } from "../handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
+import { ActionStack, Action } from "@/components/ActionStack";
 
 type CanvasProps = {
   defaultBackground?: string;
@@ -21,6 +23,7 @@ type CanvasProps = {
   setErasing?: React.Dispatch<React.SetStateAction<boolean>>; // Add setErase prop
   pageID: string | undefined; // Add page prop
   setPage?: React.Dispatch<React.SetStateAction<NotesCode.Document>>; // Add setPage prop
+  actionStack: RefObject<ActionStack>;
 };
 
 // Define the type for the exposed methods
@@ -48,6 +51,7 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     erasing = false,
     pageID, // Accept page prop
     defaultBackground = "#FFFFFF",
+    actionStack,
   }: CanvasProps,
   ref: React.ForwardedRef<InkCanvasV2Ref>
 ) => {
@@ -94,7 +98,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
   });
   const [drawing, setDrawing] = useState(false);
   const [points, setPoints] = useState<NotesCode.Point[]>([]);
-  // Remove internal page state: const [page, setPage] = useState<{strokes:Stroke[]}>({ strokes: [] });
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [presenter, setPresenter] = useState(null);
@@ -121,18 +124,6 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     // Expose other functions here
   }));
 
-  const setPage = useCallback(
-    (page: NotesCode.Document) => {
-      // debugger;
-      if (!currentPage || !pages) return;
-      let newPages = structuredClone(pages);
-      if (!newPages) return;
-      newPages.set(currentPage, page);
-      setPages(newPages);
-    },
-    [currentPage, pages]
-  );
-
   useEffect(() => {
     if (!currentPage || !pages) return;
     let page = pages.get(currentPage);
@@ -147,15 +138,36 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
     }));
   }, [strokeColor]);
 
-  useEffect(() => {
-    console.log("Pages:", pages);
-    console.log("Current Page:", currentPage);
-    console.log("Page Doc:", page);
-  }, [pages, currentPage, page]);
-
   function erasePage() {
-    if (!setPage) return;
-    setPage(new NotesCode.Document({ strokes: [] }));
+    if (!actionStack.current) return;
+    class ErasePageAction implements Action {
+      type = "erasePage";
+      payload: { doc: NotesCode.Document | undefined; id: string } | undefined =
+        undefined;
+      prev = null;
+      next = null;
+      execute(state: any) {
+        if (
+          !state.pages ||
+          !state.currentPage ||
+          state.currentPage === undefined
+        ) {
+          console.error("Unable to erase page: No pages or current page set.");
+          return;
+        }
+        this.payload = {
+          doc: state.pages.get(state.currentPage),
+          id: state.currentPage,
+        };
+        state.setPage(new NotesCode.Document({ strokes: [] }));
+      }
+      rollback(state: any) {
+        if (state.setPage && this.payload?.doc) {
+          state.setPage(structuredClone(this.payload?.doc), this.payload?.id);
+        }
+      }
+    }
+    actionStack.current?.addAction(new ErasePageAction());
   }
 
   // Canvas initialisieren und auf Fenstergröße reagieren
@@ -249,49 +261,122 @@ const InkCanvasV2: React.ForwardRefRenderFunction<
       if (!erase) {
         dontShow.current = true;
         let prev = pages.get(currentPage);
+        class AddStrokeAction implements Action {
+          type = "addStroke";
+          payload: { stroke: NotesCode.Stroke; id: string };
+          constructor(stroke: NotesCode.Stroke, id: string) {
+            this.payload = { stroke: stroke, id: id };
+          }
+          prev = null;
+          next = null;
+          execute(state: {
+            setPage: (page: NotesCode.Document, id?: string) => void;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            page = structuredClone(page);
+            page.strokes.push(structuredClone(this.payload.stroke));
+            state.setPage(page, this.payload.id);
+          }
+          rollback(state: {
+            setPage: (page: NotesCode.Document, id?: string) => void;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            page = structuredClone(page);
+            page.strokes.splice(page.strokes.length - 1, 1);
+            state.setPage(page, this.payload.id);
+          }
+        }
+
         if (!prev) return;
-        setPage(
-          new NotesCode.Document({
-            strokes: [
-              ...prev.strokes,
-              new NotesCode.Stroke({
-                points: points,
-                color: style.color,
-                width: style.diameter,
-              }),
-            ],
-          })
+        actionStack.current.addAction(
+          new AddStrokeAction(
+            new NotesCode.Stroke({
+              points: points,
+              color: style.color,
+              width: style.diameter,
+            }),
+            currentPage
+          )
         );
       } else {
-        if (erase && points.length >= 2) {
-          const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
-          for (let i = 1; i < points.length; i++) {
-            eraserSegments.push([points[i - 1], points[i]]);
+        const deleteRadius = 10; // oder abhängig vom Pressure/Style
+        const deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[] = [];
+        const newStrokes: NotesCode.Stroke[] = [];
+        for (let i = 0; i < page.strokes.length; i++) {
+          const stroke = page.strokes[i];
+          // Use page prop
+          // Behalte den Stroke, wenn **keiner** der Punkte nahe am Radierpfad ist
+          const isNearEraser = stroke?.points?.some((p) =>
+            points.some((d) => {
+              const dx = (p.x || 0) - d.x;
+              const dy = (p.y || 0) - d.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              return distance < deleteRadius;
+            })
+          );
+          if (isNearEraser) {
+            deletedStrokes.push({ stroke: stroke as NotesCode.Stroke, idx: i });
+          } else {
+            newStrokes.push(stroke as NotesCode.Stroke);
           }
-          const newStrokes = page.strokes.filter((stroke) => {
-            if (!stroke.points || stroke.points.length < 2) return true;
-            for (let i = 1; i < stroke.points.length; i++) {
-              const strokeSegStart = stroke.points[i - 1];
-              const strokeSegEnd = stroke.points[i];
-              for (const [eStart, eEnd] of eraserSegments) {
-                if (
-                  checkLineIntersection(
-                    strokeSegStart as NotesCode.Point,
-                    strokeSegEnd as NotesCode.Point,
-                    eStart,
-                    eEnd
-                  )
-                ) {
-                  return false; // Schnitt gefunden → stroke löschen
-                }
-              }
-            }
-            return true; // kein Schnitt → stroke behalten
-          });
-          setPage(new NotesCode.Document({ strokes: newStrokes })); // Use setPage prop
-
-          setPoints([]);
         }
+        class DeleteStrokesAction implements Action {
+          type = "deleteStrokes";
+          prev = null;
+          next = null;
+          payload: {
+            deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[];
+            newStrokes: NotesCode.Stroke[];
+            id: string;
+          };
+          constructor(
+            deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[],
+            newStrokes: NotesCode.Stroke[],
+            id: string
+          ) {
+            this.payload = {
+              deletedStrokes: deletedStrokes,
+              newStrokes: newStrokes,
+              id: id,
+            };
+          }
+          execute(state: {
+            setPage: (page: NotesCode.Document, id?: string) => Promise<any>;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            let newPage = new NotesCode.Document({
+              ...page,
+              strokes: structuredClone(this.payload.newStrokes),
+            });
+            state.setPage(newPage, this.payload.id);
+          }
+          rollback(state: {
+            setPage: (page: NotesCode.Document, id?: string) => Promise<any>;
+            pages: Map<string, NotesCode.Document>;
+          }) {
+            if (!state.setPage || !state.pages) return;
+            let page = state.pages.get(this.payload.id);
+            if (!page) return;
+            let newPage = structuredClone(page);
+            this.payload.deletedStrokes.sort((a, b) => a.idx - b.idx);
+            for (let deleted of this.payload.deletedStrokes) {
+              newPage.strokes.splice(deleted.idx, 0, deleted.stroke);
+            }
+            state.setPage(newPage, this.payload.id);
+          }
+        }
+        actionStack.current.addAction(
+          new DeleteStrokesAction(deletedStrokes, newStrokes, currentPage)
+        );
       }
     };
 
