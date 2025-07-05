@@ -354,16 +354,16 @@ export default function NotionClone() {
         <div className="p-3 flex items-center justify-between border-b border-[#333]">
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-gray-500 rounded-md flex items-center justify-center text-xs cursor-pointer hover:bg-gray-600 transition">
-                S
+              <div className="w-6 h-6 rounded-md flex items-center justify-center text-xs cursor-pointer ">
+                <img src="/nc-logo.svg" alt="Logo" className="" />
               </div>
               <span className="text-sm font-medium">NotesCode</span>
               <ChevronDown className="h-3 w-3 cursor-pointer hover:text-gray-300" />
             </div>
           )}
           {sidebarCollapsed && (
-            <div className="w-6 h-6 bg-gray-500 rounded-md flex items-center justify-center text-xs cursor-pointer hover:bg-gray-600 transition mx-auto">
-              S
+            <div className="w-6 h-6 rounded-md flex items-center justify-center text-xs cursor-pointer mx-auto">
+              <img src="/nc-logo.svg" alt="Logo"/>
             </div>
           )}
           {!sidebarCollapsed && (
