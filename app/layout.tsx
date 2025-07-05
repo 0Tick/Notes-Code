@@ -8,9 +8,8 @@ import { FilesystemProvider } from "@/components/filesystem-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Notion Clone",
-  description: "A Notion-like workspace",
-  generator: "v0.dev",
+  title: "Notes-Code",
+  description: "Annotate Code with Ease",
 };
 
 export default function RootLayout({
@@ -20,6 +19,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.ico" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content={metadata.description} />
+        <title>{metadata.title}</title>
+      </head>
       <body className={inter.className}>
         <FilesystemProvider>
           <ThemeProvider
