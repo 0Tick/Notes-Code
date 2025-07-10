@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { errorToast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
@@ -13,6 +13,7 @@ function isNotebook(handle: FileSystemDirectoryHandle): boolean {
   return handle.name.endsWith(".ncnb");
 }
 
+//TODO Rewrite to use proper functional design patterns
 // Custom hook for managing filesystem interactions and state
 export function useFilesystem() {
   // State to track if the directory picker API is available
@@ -185,6 +186,10 @@ export function useFilesystem() {
   const [imagesDirectory, setImagesDirectory] = useState<
     FileSystemDirectoryHandle | undefined
   >(undefined);
+  // State for the files directory handle of the currently opened notebook
+  const [filesDirectory, setFilesDirectory] = useState<
+    FileSystemDirectoryHandle | undefined
+  >(undefined);
 
   // Refreshes the handle for the pages directory
   const refreshPagesDirectory = useCallback(
@@ -216,6 +221,25 @@ export function useFilesystem() {
       return dir.getDirectoryHandle("img", { create: true }).then((handle) => {
         setImagesDirectory(handle);
       });
+    },
+    [notebookDirectory]
+  );
+
+  // Refreshes the handle for the files directory
+  const refreshFilesDirectory = useCallback(
+    (notebookDir?: FileSystemDirectoryHandle) => {
+      let dir = notebookDir;
+      if (notebookDirectory === undefined) {
+        dir = notebookDirectory;
+      }
+      if (dir === undefined) {
+        return Promise.reject("No notebook directory set");
+      }
+      return dir
+        .getDirectoryHandle("files", { create: true })
+        .then((handle) => {
+          setFilesDirectory(handle);
+        });
     },
     [notebookDirectory]
   );
@@ -303,6 +327,9 @@ export function useFilesystem() {
     refreshPagesDirectory(notebookDirectory).catch((err) => {
       console.error("Error refreshing pages directory:", err);
     });
+    refreshFilesDirectory(notebookDirectory).catch((err) => {
+      console.error("Error refreshing files directory:", err);
+    });
   }, [notebookDirectory]);
 
   // Opens a notebook by name and sets the notebook directory handle
@@ -344,6 +371,18 @@ export function useFilesystem() {
       setToReloadPages(true);
     }
   }, [currentPage]);
+
+  const setPage = useCallback(
+    (page: NotesCode.Document, id?: string) => {
+      if (!id) id = currentPage;
+      if (!id || !pages) return;
+      let newPages = structuredClone(pages);
+      if (!newPages) return;
+      newPages.set(id, page);
+      return Promise.resolve(setPages(newPages));
+    },
+    [currentPage, pages]
+  );
 
   // Loads a specific page from the pages directory
   const loadPage = useCallback(
@@ -407,6 +446,28 @@ export function useFilesystem() {
             let newPages = new Map<string, NotesCode.Document>(customPages);
             newPages.set(page, pageContent);
             setPages(newPages);
+          }
+          for (let img of pageContent.images) {
+            if (
+              img === undefined ||
+              img.image === undefined ||
+              img.image === null
+            )
+              continue;
+            loadImage(img.image, pagesDirectory).catch((e) => {
+              console.error(e.message, e.stack);
+            });
+          }
+          for (let txt of pageContent.textBlocks) {
+            if (
+              txt === undefined ||
+              txt.path === undefined ||
+              txt.path === null
+            )
+              continue;
+            loadText(txt.path, pagesDirectory).catch((e) => {
+              console.error(e.message, e.stack);
+            });
           }
           return Promise.resolve(pageContent);
         });
@@ -637,6 +698,11 @@ export function useFilesystem() {
                 })
                 .then(() => {
                   return dirHandle.getDirectoryHandle("img", { create: true });
+                })
+                .then(() => {
+                  return dirHandle.getDirectoryHandle("files", {
+                    create: true,
+                  });
                 })
                 .then(() => {
                   return dirHandle.getDirectoryHandle("pages", {
@@ -977,6 +1043,8 @@ export function useFilesystem() {
       setNotebookConfig(undefined);
       setCurrentPage(undefined);
       setPages(new Map<string, NotesCode.Document>());
+      imageCache.current = new Map<string, HTMLImageElement>();
+      textCache.current = new Map<string, string>();
     });
   }, [
     pages,
@@ -1031,6 +1099,120 @@ export function useFilesystem() {
     });
   }, [notebookConfig, currentPage]);
 
+  // Cache for images
+  let imageCache = useRef<Map<string, HTMLImageElement>>(
+    new Map<string, HTMLImageElement>()
+  );
+  // Loads an image from the images directory
+  const loadImage = useCallback(
+    (path: string, imgDirHandle?: FileSystemDirectoryHandle) => {
+      if (imgDirHandle === undefined) {
+        imgDirHandle = imagesDirectory;
+      }
+      if (imgDirHandle === undefined) {
+        return Promise.reject("No images directory set");
+      }
+      if (imageCache.current.has(path)) {
+        return Promise.resolve(imageCache.current.get(path));
+      }
+      return imgDirHandle
+        .getFileHandle(path)
+        .then((imgHandle) => {
+          return imgHandle.getFile();
+        })
+        .then((file) => {
+          return new Promise(
+            (resolve: (value: HTMLImageElement) => void, reject) => {
+              const reader = new FileReader();
+
+              // Handle successful load
+              reader.onload = (e) => {
+                let img = new Image();
+                img.src = reader.result as string;
+                imageCache.current.set(path, img);
+                resolve(img);
+              };
+
+              // Handle errors
+              reader.onerror = () => {
+                reject(reader.error || new Error("File reading failed"));
+              };
+
+              // Initiate reading
+              reader.readAsDataURL(file);
+            }
+          );
+        });
+    },
+    [imagesDirectory]
+  );
+
+  let textCache = useRef<Map<string, string>>(new Map<string, string>());
+  // Loads a text/code file from the pages directory
+  const loadText = useCallback(
+    (path: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) {
+        txtDirHandle = filesDirectory;
+      }
+      if (txtDirHandle === undefined) {
+        return Promise.reject("No files directory set");
+      }
+      if (textCache.current.has(path)) {
+        return Promise.resolve(textCache.current.get(path));
+      }
+      return txtDirHandle
+        .getFileHandle(path)
+        .then((txtHandle) => {
+          return txtHandle.getFile();
+        })
+        .then((file) => {
+          return new Promise((resolve: (value: string) => void, reject) => {
+            const reader = new FileReader();
+
+            // Handle successful load
+            reader.onload = (e) => {
+              let txt = reader.result as string;
+              textCache.current.set(path, txt);
+              resolve(txt);
+            };
+
+            // Handle errors
+            reader.onerror = () => {
+              reject(reader.error || new Error("File reading failed"));
+            };
+
+            // Initiate reading
+            reader.readAsText(file);
+          });
+        });
+    },
+    [filesDirectory]
+  );
+
+  // Saves a text/code file to the files directory
+  const saveText = useCallback(
+    (path: string, txt: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) {
+        txtDirHandle = filesDirectory;
+      }
+      if (txtDirHandle === undefined) {
+        return Promise.reject("No files directory set");
+      }
+      return txtDirHandle
+        .getFileHandle(path, { create: true })
+        .then((txtHandle) => {
+          return txtHandle.createWritable({
+            keepExistingData: false,
+          });
+        })
+        .then((writable) => {
+          writable.write(txt);
+          return writable.close();
+        });
+    },
+    [filesDirectory]
+  );
+
   // Returns the state variables and functions provided by the hook
   return {
     directoryPickerAvailable,
@@ -1070,5 +1252,9 @@ export function useFilesystem() {
     setStrokeColor,
     erasing,
     setErasing,
+    loadImage,
+    loadText,
+    saveText,
+    setPage,
   };
 }
