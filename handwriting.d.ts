@@ -123,6 +123,18 @@ export namespace NotesCode {
 
         /** Stroke width */
         width?: (number|null);
+
+        /** Stroke minX */
+        minX?: (number|null);
+
+        /** Stroke minY */
+        minY?: (number|null);
+
+        /** Stroke maxX */
+        maxX?: (number|null);
+
+        /** Stroke maxY */
+        maxY?: (number|null);
     }
 
     /** Represents a Stroke. */
@@ -142,6 +154,18 @@ export namespace NotesCode {
 
         /** Stroke width. */
         public width: number;
+
+        /** Stroke minX. */
+        public minX: number;
+
+        /** Stroke minY. */
+        public minY: number;
+
+        /** Stroke maxX. */
+        public maxX: number;
+
+        /** Stroke maxY. */
+        public maxY: number;
 
         /**
          * Creates a new Stroke instance using the specified properties.
@@ -454,14 +478,8 @@ export namespace NotesCode {
     /** Properties of a TextBlock. */
     interface ITextBlock {
 
-        /** TextBlock text */
-        text?: (string|null);
-
-        /** TextBlock renderingType */
-        renderingType?: (number|null);
-
-        /** TextBlock fontSize */
-        fontSize?: (number|null);
+        /** TextBlock path */
+        path?: (string|null);
 
         /** TextBlock x */
         x?: (number|null);
@@ -469,11 +487,23 @@ export namespace NotesCode {
         /** TextBlock y */
         y?: (number|null);
 
-        /** TextBlock scaleX */
-        scaleX?: (number|null);
+        /** TextBlock w */
+        w?: (number|null);
 
-        /** TextBlock scaleY */
-        scaleY?: (number|null);
+        /** TextBlock h */
+        h?: (number|null);
+
+        /** TextBlock fontSize */
+        fontSize?: (number|null);
+
+        /** TextBlock fontFamily */
+        fontFamily?: (string|null);
+
+        /** TextBlock color */
+        color?: (string|null);
+
+        /** TextBlock contentType */
+        contentType?: (number|null);
     }
 
     /** Represents a TextBlock. */
@@ -485,14 +515,8 @@ export namespace NotesCode {
          */
         constructor(properties?: NotesCode.ITextBlock);
 
-        /** TextBlock text. */
-        public text: string;
-
-        /** TextBlock renderingType. */
-        public renderingType: number;
-
-        /** TextBlock fontSize. */
-        public fontSize: number;
+        /** TextBlock path. */
+        public path: string;
 
         /** TextBlock x. */
         public x: number;
@@ -500,11 +524,23 @@ export namespace NotesCode {
         /** TextBlock y. */
         public y: number;
 
-        /** TextBlock scaleX. */
-        public scaleX: number;
+        /** TextBlock w. */
+        public w: number;
 
-        /** TextBlock scaleY. */
-        public scaleY: number;
+        /** TextBlock h. */
+        public h: number;
+
+        /** TextBlock fontSize. */
+        public fontSize: number;
+
+        /** TextBlock fontFamily. */
+        public fontFamily: string;
+
+        /** TextBlock color. */
+        public color: string;
+
+        /** TextBlock contentType. */
+        public contentType: number;
 
         /**
          * Creates a new TextBlock instance using the specified properties.
