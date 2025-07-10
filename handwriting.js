@@ -340,6 +340,10 @@ export const NotesCode = $root.NotesCode = (() => {
          * @property {Array.<NotesCode.IPoint>|null} [points] Stroke points
          * @property {string|null} [color] Stroke color
          * @property {number|null} [width] Stroke width
+         * @property {number|null} [minX] Stroke minX
+         * @property {number|null} [minY] Stroke minY
+         * @property {number|null} [maxX] Stroke maxX
+         * @property {number|null} [maxY] Stroke maxY
          */
 
         /**
@@ -383,6 +387,38 @@ export const NotesCode = $root.NotesCode = (() => {
         Stroke.prototype.width = 0;
 
         /**
+         * Stroke minX.
+         * @member {number} minX
+         * @memberof NotesCode.Stroke
+         * @instance
+         */
+        Stroke.prototype.minX = 0;
+
+        /**
+         * Stroke minY.
+         * @member {number} minY
+         * @memberof NotesCode.Stroke
+         * @instance
+         */
+        Stroke.prototype.minY = 0;
+
+        /**
+         * Stroke maxX.
+         * @member {number} maxX
+         * @memberof NotesCode.Stroke
+         * @instance
+         */
+        Stroke.prototype.maxX = 0;
+
+        /**
+         * Stroke maxY.
+         * @member {number} maxY
+         * @memberof NotesCode.Stroke
+         * @instance
+         */
+        Stroke.prototype.maxY = 0;
+
+        /**
          * Creates a new Stroke instance using the specified properties.
          * @function create
          * @memberof NotesCode.Stroke
@@ -413,6 +449,14 @@ export const NotesCode = $root.NotesCode = (() => {
                 writer.uint32(/* id 2, wireType 2 =*/18).string(message.color);
             if (message.width != null && Object.hasOwnProperty.call(message, "width"))
                 writer.uint32(/* id 3, wireType 5 =*/29).float(message.width);
+            if (message.minX != null && Object.hasOwnProperty.call(message, "minX"))
+                writer.uint32(/* id 4, wireType 5 =*/37).float(message.minX);
+            if (message.minY != null && Object.hasOwnProperty.call(message, "minY"))
+                writer.uint32(/* id 5, wireType 5 =*/45).float(message.minY);
+            if (message.maxX != null && Object.hasOwnProperty.call(message, "maxX"))
+                writer.uint32(/* id 6, wireType 5 =*/53).float(message.maxX);
+            if (message.maxY != null && Object.hasOwnProperty.call(message, "maxY"))
+                writer.uint32(/* id 7, wireType 5 =*/61).float(message.maxY);
             return writer;
         };
 
@@ -461,6 +505,22 @@ export const NotesCode = $root.NotesCode = (() => {
                     }
                 case 3: {
                         message.width = reader.float();
+                        break;
+                    }
+                case 4: {
+                        message.minX = reader.float();
+                        break;
+                    }
+                case 5: {
+                        message.minY = reader.float();
+                        break;
+                    }
+                case 6: {
+                        message.maxX = reader.float();
+                        break;
+                    }
+                case 7: {
+                        message.maxY = reader.float();
                         break;
                     }
                 default:
@@ -513,6 +573,18 @@ export const NotesCode = $root.NotesCode = (() => {
             if (message.width != null && message.hasOwnProperty("width"))
                 if (typeof message.width !== "number")
                     return "width: number expected";
+            if (message.minX != null && message.hasOwnProperty("minX"))
+                if (typeof message.minX !== "number")
+                    return "minX: number expected";
+            if (message.minY != null && message.hasOwnProperty("minY"))
+                if (typeof message.minY !== "number")
+                    return "minY: number expected";
+            if (message.maxX != null && message.hasOwnProperty("maxX"))
+                if (typeof message.maxX !== "number")
+                    return "maxX: number expected";
+            if (message.maxY != null && message.hasOwnProperty("maxY"))
+                if (typeof message.maxY !== "number")
+                    return "maxY: number expected";
             return null;
         };
 
@@ -542,6 +614,14 @@ export const NotesCode = $root.NotesCode = (() => {
                 message.color = String(object.color);
             if (object.width != null)
                 message.width = Number(object.width);
+            if (object.minX != null)
+                message.minX = Number(object.minX);
+            if (object.minY != null)
+                message.minY = Number(object.minY);
+            if (object.maxX != null)
+                message.maxX = Number(object.maxX);
+            if (object.maxY != null)
+                message.maxY = Number(object.maxY);
             return message;
         };
 
@@ -563,6 +643,10 @@ export const NotesCode = $root.NotesCode = (() => {
             if (options.defaults) {
                 object.color = "";
                 object.width = 0;
+                object.minX = 0;
+                object.minY = 0;
+                object.maxX = 0;
+                object.maxY = 0;
             }
             if (message.points && message.points.length) {
                 object.points = [];
@@ -573,6 +657,14 @@ export const NotesCode = $root.NotesCode = (() => {
                 object.color = message.color;
             if (message.width != null && message.hasOwnProperty("width"))
                 object.width = options.json && !isFinite(message.width) ? String(message.width) : message.width;
+            if (message.minX != null && message.hasOwnProperty("minX"))
+                object.minX = options.json && !isFinite(message.minX) ? String(message.minX) : message.minX;
+            if (message.minY != null && message.hasOwnProperty("minY"))
+                object.minY = options.json && !isFinite(message.minY) ? String(message.minY) : message.minY;
+            if (message.maxX != null && message.hasOwnProperty("maxX"))
+                object.maxX = options.json && !isFinite(message.maxX) ? String(message.maxX) : message.maxX;
+            if (message.maxY != null && message.hasOwnProperty("maxY"))
+                object.maxY = options.json && !isFinite(message.maxY) ? String(message.maxY) : message.maxY;
             return object;
         };
 
@@ -1161,13 +1253,15 @@ export const NotesCode = $root.NotesCode = (() => {
          * Properties of a TextBlock.
          * @memberof NotesCode
          * @interface ITextBlock
-         * @property {string|null} [text] TextBlock text
-         * @property {number|null} [renderingType] TextBlock renderingType
-         * @property {number|null} [fontSize] TextBlock fontSize
+         * @property {string|null} [path] TextBlock path
          * @property {number|null} [x] TextBlock x
          * @property {number|null} [y] TextBlock y
-         * @property {number|null} [scaleX] TextBlock scaleX
-         * @property {number|null} [scaleY] TextBlock scaleY
+         * @property {number|null} [w] TextBlock w
+         * @property {number|null} [h] TextBlock h
+         * @property {number|null} [fontSize] TextBlock fontSize
+         * @property {string|null} [fontFamily] TextBlock fontFamily
+         * @property {string|null} [color] TextBlock color
+         * @property {number|null} [contentType] TextBlock contentType
          */
 
         /**
@@ -1186,28 +1280,12 @@ export const NotesCode = $root.NotesCode = (() => {
         }
 
         /**
-         * TextBlock text.
-         * @member {string} text
+         * TextBlock path.
+         * @member {string} path
          * @memberof NotesCode.TextBlock
          * @instance
          */
-        TextBlock.prototype.text = "";
-
-        /**
-         * TextBlock renderingType.
-         * @member {number} renderingType
-         * @memberof NotesCode.TextBlock
-         * @instance
-         */
-        TextBlock.prototype.renderingType = 0;
-
-        /**
-         * TextBlock fontSize.
-         * @member {number} fontSize
-         * @memberof NotesCode.TextBlock
-         * @instance
-         */
-        TextBlock.prototype.fontSize = 0;
+        TextBlock.prototype.path = "";
 
         /**
          * TextBlock x.
@@ -1226,20 +1304,52 @@ export const NotesCode = $root.NotesCode = (() => {
         TextBlock.prototype.y = 0;
 
         /**
-         * TextBlock scaleX.
-         * @member {number} scaleX
+         * TextBlock w.
+         * @member {number} w
          * @memberof NotesCode.TextBlock
          * @instance
          */
-        TextBlock.prototype.scaleX = 0;
+        TextBlock.prototype.w = 0;
 
         /**
-         * TextBlock scaleY.
-         * @member {number} scaleY
+         * TextBlock h.
+         * @member {number} h
          * @memberof NotesCode.TextBlock
          * @instance
          */
-        TextBlock.prototype.scaleY = 0;
+        TextBlock.prototype.h = 0;
+
+        /**
+         * TextBlock fontSize.
+         * @member {number} fontSize
+         * @memberof NotesCode.TextBlock
+         * @instance
+         */
+        TextBlock.prototype.fontSize = 0;
+
+        /**
+         * TextBlock fontFamily.
+         * @member {string} fontFamily
+         * @memberof NotesCode.TextBlock
+         * @instance
+         */
+        TextBlock.prototype.fontFamily = "";
+
+        /**
+         * TextBlock color.
+         * @member {string} color
+         * @memberof NotesCode.TextBlock
+         * @instance
+         */
+        TextBlock.prototype.color = "";
+
+        /**
+         * TextBlock contentType.
+         * @member {number} contentType
+         * @memberof NotesCode.TextBlock
+         * @instance
+         */
+        TextBlock.prototype.contentType = 0;
 
         /**
          * Creates a new TextBlock instance using the specified properties.
@@ -1265,20 +1375,24 @@ export const NotesCode = $root.NotesCode = (() => {
         TextBlock.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
-            if (message.text != null && Object.hasOwnProperty.call(message, "text"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.text);
-            if (message.renderingType != null && Object.hasOwnProperty.call(message, "renderingType"))
-                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.renderingType);
+            if (message.path != null && Object.hasOwnProperty.call(message, "path"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.path);
             if (message.x != null && Object.hasOwnProperty.call(message, "x"))
-                writer.uint32(/* id 4, wireType 5 =*/37).float(message.x);
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.x);
             if (message.y != null && Object.hasOwnProperty.call(message, "y"))
-                writer.uint32(/* id 5, wireType 5 =*/45).float(message.y);
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.y);
+            if (message.w != null && Object.hasOwnProperty.call(message, "w"))
+                writer.uint32(/* id 4, wireType 0 =*/32).int32(message.w);
+            if (message.h != null && Object.hasOwnProperty.call(message, "h"))
+                writer.uint32(/* id 5, wireType 0 =*/40).int32(message.h);
             if (message.fontSize != null && Object.hasOwnProperty.call(message, "fontSize"))
                 writer.uint32(/* id 6, wireType 0 =*/48).int32(message.fontSize);
-            if (message.scaleX != null && Object.hasOwnProperty.call(message, "scaleX"))
-                writer.uint32(/* id 7, wireType 5 =*/61).float(message.scaleX);
-            if (message.scaleY != null && Object.hasOwnProperty.call(message, "scaleY"))
-                writer.uint32(/* id 8, wireType 5 =*/69).float(message.scaleY);
+            if (message.fontFamily != null && Object.hasOwnProperty.call(message, "fontFamily"))
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.fontFamily);
+            if (message.color != null && Object.hasOwnProperty.call(message, "color"))
+                writer.uint32(/* id 8, wireType 2 =*/66).string(message.color);
+            if (message.contentType != null && Object.hasOwnProperty.call(message, "contentType"))
+                writer.uint32(/* id 9, wireType 0 =*/72).int32(message.contentType);
             return writer;
         };
 
@@ -1316,31 +1430,39 @@ export const NotesCode = $root.NotesCode = (() => {
                     break;
                 switch (tag >>> 3) {
                 case 1: {
-                        message.text = reader.string();
+                        message.path = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.x = reader.int32();
                         break;
                     }
                 case 3: {
-                        message.renderingType = reader.int32();
+                        message.y = reader.int32();
+                        break;
+                    }
+                case 4: {
+                        message.w = reader.int32();
+                        break;
+                    }
+                case 5: {
+                        message.h = reader.int32();
                         break;
                     }
                 case 6: {
                         message.fontSize = reader.int32();
                         break;
                     }
-                case 4: {
-                        message.x = reader.float();
-                        break;
-                    }
-                case 5: {
-                        message.y = reader.float();
-                        break;
-                    }
                 case 7: {
-                        message.scaleX = reader.float();
+                        message.fontFamily = reader.string();
                         break;
                     }
                 case 8: {
-                        message.scaleY = reader.float();
+                        message.color = reader.string();
+                        break;
+                    }
+                case 9: {
+                        message.contentType = reader.int32();
                         break;
                     }
                 default:
@@ -1378,27 +1500,33 @@ export const NotesCode = $root.NotesCode = (() => {
         TextBlock.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
-            if (message.text != null && message.hasOwnProperty("text"))
-                if (!$util.isString(message.text))
-                    return "text: string expected";
-            if (message.renderingType != null && message.hasOwnProperty("renderingType"))
-                if (!$util.isInteger(message.renderingType))
-                    return "renderingType: integer expected";
+            if (message.path != null && message.hasOwnProperty("path"))
+                if (!$util.isString(message.path))
+                    return "path: string expected";
+            if (message.x != null && message.hasOwnProperty("x"))
+                if (!$util.isInteger(message.x))
+                    return "x: integer expected";
+            if (message.y != null && message.hasOwnProperty("y"))
+                if (!$util.isInteger(message.y))
+                    return "y: integer expected";
+            if (message.w != null && message.hasOwnProperty("w"))
+                if (!$util.isInteger(message.w))
+                    return "w: integer expected";
+            if (message.h != null && message.hasOwnProperty("h"))
+                if (!$util.isInteger(message.h))
+                    return "h: integer expected";
             if (message.fontSize != null && message.hasOwnProperty("fontSize"))
                 if (!$util.isInteger(message.fontSize))
                     return "fontSize: integer expected";
-            if (message.x != null && message.hasOwnProperty("x"))
-                if (typeof message.x !== "number")
-                    return "x: number expected";
-            if (message.y != null && message.hasOwnProperty("y"))
-                if (typeof message.y !== "number")
-                    return "y: number expected";
-            if (message.scaleX != null && message.hasOwnProperty("scaleX"))
-                if (typeof message.scaleX !== "number")
-                    return "scaleX: number expected";
-            if (message.scaleY != null && message.hasOwnProperty("scaleY"))
-                if (typeof message.scaleY !== "number")
-                    return "scaleY: number expected";
+            if (message.fontFamily != null && message.hasOwnProperty("fontFamily"))
+                if (!$util.isString(message.fontFamily))
+                    return "fontFamily: string expected";
+            if (message.color != null && message.hasOwnProperty("color"))
+                if (!$util.isString(message.color))
+                    return "color: string expected";
+            if (message.contentType != null && message.hasOwnProperty("contentType"))
+                if (!$util.isInteger(message.contentType))
+                    return "contentType: integer expected";
             return null;
         };
 
@@ -1414,20 +1542,24 @@ export const NotesCode = $root.NotesCode = (() => {
             if (object instanceof $root.NotesCode.TextBlock)
                 return object;
             let message = new $root.NotesCode.TextBlock();
-            if (object.text != null)
-                message.text = String(object.text);
-            if (object.renderingType != null)
-                message.renderingType = object.renderingType | 0;
+            if (object.path != null)
+                message.path = String(object.path);
+            if (object.x != null)
+                message.x = object.x | 0;
+            if (object.y != null)
+                message.y = object.y | 0;
+            if (object.w != null)
+                message.w = object.w | 0;
+            if (object.h != null)
+                message.h = object.h | 0;
             if (object.fontSize != null)
                 message.fontSize = object.fontSize | 0;
-            if (object.x != null)
-                message.x = Number(object.x);
-            if (object.y != null)
-                message.y = Number(object.y);
-            if (object.scaleX != null)
-                message.scaleX = Number(object.scaleX);
-            if (object.scaleY != null)
-                message.scaleY = Number(object.scaleY);
+            if (object.fontFamily != null)
+                message.fontFamily = String(object.fontFamily);
+            if (object.color != null)
+                message.color = String(object.color);
+            if (object.contentType != null)
+                message.contentType = object.contentType | 0;
             return message;
         };
 
@@ -1445,28 +1577,34 @@ export const NotesCode = $root.NotesCode = (() => {
                 options = {};
             let object = {};
             if (options.defaults) {
-                object.text = "";
-                object.renderingType = 0;
+                object.path = "";
                 object.x = 0;
                 object.y = 0;
+                object.w = 0;
+                object.h = 0;
                 object.fontSize = 0;
-                object.scaleX = 0;
-                object.scaleY = 0;
+                object.fontFamily = "";
+                object.color = "";
+                object.contentType = 0;
             }
-            if (message.text != null && message.hasOwnProperty("text"))
-                object.text = message.text;
-            if (message.renderingType != null && message.hasOwnProperty("renderingType"))
-                object.renderingType = message.renderingType;
+            if (message.path != null && message.hasOwnProperty("path"))
+                object.path = message.path;
             if (message.x != null && message.hasOwnProperty("x"))
-                object.x = options.json && !isFinite(message.x) ? String(message.x) : message.x;
+                object.x = message.x;
             if (message.y != null && message.hasOwnProperty("y"))
-                object.y = options.json && !isFinite(message.y) ? String(message.y) : message.y;
+                object.y = message.y;
+            if (message.w != null && message.hasOwnProperty("w"))
+                object.w = message.w;
+            if (message.h != null && message.hasOwnProperty("h"))
+                object.h = message.h;
             if (message.fontSize != null && message.hasOwnProperty("fontSize"))
                 object.fontSize = message.fontSize;
-            if (message.scaleX != null && message.hasOwnProperty("scaleX"))
-                object.scaleX = options.json && !isFinite(message.scaleX) ? String(message.scaleX) : message.scaleX;
-            if (message.scaleY != null && message.hasOwnProperty("scaleY"))
-                object.scaleY = options.json && !isFinite(message.scaleY) ? String(message.scaleY) : message.scaleY;
+            if (message.fontFamily != null && message.hasOwnProperty("fontFamily"))
+                object.fontFamily = message.fontFamily;
+            if (message.color != null && message.hasOwnProperty("color"))
+                object.color = message.color;
+            if (message.contentType != null && message.hasOwnProperty("contentType"))
+                object.contentType = message.contentType;
             return object;
         };
 

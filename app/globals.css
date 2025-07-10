@@ -64,6 +64,7 @@ body {
 
 .popover {
   position: absolute;
+  z-index: 10;
   top: calc(100% + 2px);
   left: 0;
   border-radius: 9px;
