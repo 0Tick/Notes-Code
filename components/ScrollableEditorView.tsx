@@ -14,6 +14,7 @@ import { Action, ActionStack } from "./ActionStack";
 import {
   Eraser,
   Home,
+  Pen,
   PenTool,
   Plus,
   RotateCcw,
@@ -35,6 +36,8 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { PopoverPicker } from "./popOverPicker";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Slider } from "./ui/slider";
 type DelegatedInkTrailPresenter = {
   updateInkTrailStartPoint: (evt: PointerEvent, style: any) => Promise<void>;
   presentationArea: HTMLCanvasElement | null;
@@ -102,7 +105,7 @@ export const Page: FC<PageProps> = ({
   );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  function calculateThickness(pressure: number) {
+  function calculateThickness(pressure: number, strokeDiameter: number) {
     return strokeDiameter * pressure;
   }
 
@@ -144,7 +147,10 @@ export const Page: FC<PageProps> = ({
       stroke?.points?.forEach((j) => {
         if (lastpoints != null) {
           ctx.beginPath();
-          ctx.lineWidth = calculateThickness(j.pressure || 1);
+          ctx.lineWidth = calculateThickness(
+            j.pressure || 1,
+            stroke.width || 5
+          );
           ctx.moveTo(lastpoints.x, lastpoints.y);
           ctx.lineTo(j.x || 0, j.y || 0);
           ctx.stroke();
@@ -195,6 +201,7 @@ export const Page: FC<PageProps> = ({
       style={{
         width: pageWidth * scale,
         height: pageHeight * scale,
+        touchAction: "none", // TODO Make this dependant on if a tool is selected. No tool => Allow for scrolling
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -314,18 +321,7 @@ export default function Notebook() {
       color: strokeColor,
     }));
   }, [strokeColor]);
-  // Undo / Redo eventlisteners
-  useEffect(() => {
-    document.addEventListener("keyup", function (event) {
-      if (event.ctrlKey && event.key === "z") {
-        actionStack.current.undo();
-        event.preventDefault();
-      } else if (event.ctrlKey && event.key === "y") {
-        actionStack.current.redo();
-        event.preventDefault();
-      }
-    });
-  }, []);
+
   // update actionStack state when pages or currentPage changes
   useEffect(() => {
     actionStack.current.state.pages = pages;
@@ -543,7 +539,9 @@ export default function Notebook() {
       }),
     ]);
     if (presenter.current !== null) {
-      presenter.current.updateInkTrailStartPoint(evt, style);
+      let st = structuredClone(style);
+      st.diameter /= 2;
+      presenter.current.updateInkTrailStartPoint(evt, st);
     }
   };
 
@@ -761,6 +759,65 @@ export default function Notebook() {
     unloadNotebook();
   };
 
+  const [strokeSizes, setStrokeSizes] = useState<number[]>([]);
+  const [currentStroke, setCurrentStrokeSize] = useState(2);
+
+  // Undo / Redo eventlisteners, Load stroke Sizes from Local Storage
+  useEffect(() => {
+    document.addEventListener("keyup", function (event) {
+      if (event.ctrlKey && event.key === "z") {
+        actionStack.current.undo();
+        event.preventDefault();
+      } else if (event.ctrlKey && event.key === "y") {
+        actionStack.current.redo();
+        event.preventDefault();
+      }
+    });
+    let strokes = localStorage.getItem("strokes");
+    if (strokes === null) {
+      localStorage.setItem(
+        "strokes",
+        JSON.stringify({ sizes: [3, 6, 10], current: currentStroke })
+      );
+    } else {
+      let strokesObj: { sizes: number[]; current: number } =
+        JSON.parse(strokes);
+      setStrokeSizes(strokesObj.sizes);
+      setCurrentStrokeSize(strokesObj.current);
+    }
+  }, []);
+
+  function updateStrokeSize(newSize: number) {
+    const newStrokeSizes = [...strokeSizes];
+    // Update the size at the currently active index
+    newStrokeSizes[currentStroke] = Math.round(newSize);
+    setStrokeSizes(newStrokeSizes);
+
+    // Update the drawing style immediately
+    setStyle((s) => ({
+      ...s,
+      diameter: Math.round(newSize),
+    }));
+
+    // Persist to localStorage
+    localStorage.setItem(
+      "strokes",
+      JSON.stringify({ sizes: newStrokeSizes, current: currentStroke })
+    );
+  }
+
+  function setStroke(i: number) {
+    setCurrentStrokeSize(i);
+    localStorage.setItem(
+      "strokes",
+      JSON.stringify({ sizes: strokeSizes, current: i })
+    );
+    setStyle((s) => ({
+      ...s,
+      diameter: strokeSizes[i],
+    }));
+  }
+
   if (!!!showCanvasEditor) {
     return <></>;
   }
@@ -919,6 +976,96 @@ export default function Notebook() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+                    {/* Stroke Size Selector */}
+          {strokeSizes.map((size, i) => {
+            const isActive = i === currentStroke;
+            return (
+              <TooltipProvider key={i}>
+                <Tooltip>
+                  {isActive ? (
+                    // ACTIVE STROKE: Show a Popover to adjust the size
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={getButtonClasses(
+                              `stroke-${i}`,
+                              "relative flex items-center justify-center rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                            )}
+                          >
+                            <div
+                              className="w-3/4 rounded-full"
+                              style={{
+                                height: `${Math.max(2, size / 1.5)}px`,
+                                backgroundColor: "currentColor",
+                              }}
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 bg-[#333] border-[#444] text-white">
+                        <div className="grid gap-4">
+                          <div className="space-y-2">
+                            <h4 className="font-medium leading-none">Pen Size</h4>
+                            <p className="text-sm text-gray-400">
+                              Adjust the active pen size.
+                            </p>
+                          </div>
+                          <div className="grid gap-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-sm">{size.toFixed(0)}px</span>
+                            </div>
+                            <Slider
+                              defaultValue={[size]}
+                              max={50}
+                              min={1}
+                              step={1}
+                              onValueChange={(value) => updateStrokeSize(value[0])}
+                            />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    // INACTIVE STROKE: Show a button to select it
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          handleButtonClick(`stroke-${i}`, () => setStroke(i))
+                        }
+                        className={getButtonClasses(
+                          `stroke-${i}`,
+                          "relative flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-[#333]"
+                        )}
+                      >
+                        <div
+                          className="w-3/4 rounded-full"
+                          style={{
+                            height: `${Math.max(2, size / 1.5)}px`,
+                            backgroundColor: "currentColor",
+                          }}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                  )}
+                  <TooltipContent className="bg-[#333] text-white border-[#444]">
+                    <p>
+                      {isActive
+                        ? `Current size: ${size}px (Click to edit)`
+                        : `Set stroke size to ${size}px`}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+
+          {/* Divider for visual separation */}
+          <div className="h-6 w-px bg-gray-600 mx-1"></div>
           {/* Erase Page Button */}
           <TooltipProvider>
             <TooltipProvider>
