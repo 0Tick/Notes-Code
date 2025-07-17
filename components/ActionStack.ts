@@ -21,7 +21,7 @@ export class ActionStack {
     action.execute(this.state);
   }
   undo(): void {
-    if (this.current === null) {
+    if (this.current === undefined || this.current === null) {
       return;
     } else {
       this.current.rollback(this.state);
@@ -29,19 +29,24 @@ export class ActionStack {
     }
   }
   redo(): void {
-    if (this.current === null) {
-      if (this.first !== null) {
+    if (this.current === undefined || this.current === null) {
+      if (this.first !== undefined && this.first !== null) {
         this.current = this.first;
         this.current.execute(this.state);
       }
-      return
-    }
-    else if (this.current.next === null) {
+      return;
+    } else if (this.current.next === null) {
       return;
     } else {
       this.current.next.execute(this.state);
       this.current = this.current.next;
     }
+  }
+  canUndo(): boolean {
+    return this.current !== null;
+  }
+  canRedo(): boolean {
+    return (this.current !== null && this.current.next !== null) || (this.current === null && this.first !== null);
   }
 }
 
