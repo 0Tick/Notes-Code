@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { errorToast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
@@ -13,6 +13,7 @@ function isNotebook(handle: FileSystemDirectoryHandle): boolean {
   return handle.name.endsWith(".ncnb");
 }
 
+//TODO Rewrite to use proper functional design patterns
 // Custom hook for managing filesystem interactions and state
 export function useFilesystem() {
   // State to track if the directory picker API is available
@@ -185,6 +186,10 @@ export function useFilesystem() {
   const [imagesDirectory, setImagesDirectory] = useState<
     FileSystemDirectoryHandle | undefined
   >(undefined);
+  // State for the files directory handle of the currently opened notebook
+  const [filesDirectory, setFilesDirectory] = useState<
+    FileSystemDirectoryHandle | undefined
+  >(undefined);
 
   // Refreshes the handle for the pages directory
   const refreshPagesDirectory = useCallback(
@@ -198,6 +203,7 @@ export function useFilesystem() {
       }
       return dir.getDirectoryHandle("pages").then((handle) => {
         setPagesDirectory(handle);
+        return handle;
       });
     },
     [notebookDirectory]
@@ -215,7 +221,28 @@ export function useFilesystem() {
       }
       return dir.getDirectoryHandle("img", { create: true }).then((handle) => {
         setImagesDirectory(handle);
+        return handle;
       });
+    },
+    [notebookDirectory]
+  );
+
+  // Refreshes the handle for the files directory
+  const refreshFilesDirectory = useCallback(
+    (notebookDir?: FileSystemDirectoryHandle) => {
+      let dir = notebookDir;
+      if (notebookDirectory === undefined) {
+        dir = notebookDirectory;
+      }
+      if (dir === undefined) {
+        return Promise.reject("No notebook directory set");
+      }
+      return dir
+        .getDirectoryHandle("files", { create: true })
+        .then((handle) => {
+          setFilesDirectory(handle);
+          return handle;
+        });
     },
     [notebookDirectory]
   );
@@ -227,31 +254,23 @@ export function useFilesystem() {
       unloadNotebook();
       return;
     }
-    notebookDirectory
-      .getFileHandle("nc.json")
-      .then((fileHandle) => {
-        return fileHandle.getFile();
-      })
-      .then((file) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          if (reader.result !== null) {
-            let notebook: {
-              version: string;
-              description: string;
-              lastActivePage: string;
-              pages: Map<
-                string,
-                {
-                  width: number;
-                  height: number;
-                  background: string;
-                  nextPage: string;
-                  prevPage: string;
-                }
-              >;
-            } = JSON.parse(reader.result.toString());
-            notebook.pages = new Map<
+    new Promise(async (resolve, reject) => {
+      let directories = await Promise.all([
+        refreshImagesDirectory(notebookDirectory),
+        refreshPagesDirectory(notebookDirectory),
+        refreshFilesDirectory(notebookDirectory),
+      ]);
+      let [imageDirHandle, textDirHandle, filesDirHandle] = directories;
+      let fileHandle = await notebookDirectory.getFileHandle("nc.json");
+      let file = await fileHandle.getFile();
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        if (reader.result !== null) {
+          let notebook: {
+            version: string;
+            description: string;
+            lastActivePage: string;
+            pages: Map<
               string,
               {
                 width: number;
@@ -260,54 +279,49 @@ export function useFilesystem() {
                 nextPage: string;
                 prevPage: string;
               }
-            >(Object.entries(notebook.pages));
-            notebookDirectory
-              .getDirectoryHandle("pages")
-              .then((pagesDirHandle) => {
-                return loadPage(notebook.lastActivePage, pagesDirHandle);
-              })
-              .then((cont) => {
-                newPages.set(notebook.lastActivePage, cont);
-                setNotebookConfig(notebook);
-                return setCurrentPage(notebook.lastActivePage);
-              })
-              .catch((err) => {
-                errorToast({
-                  title: "Error loading page",
-                  description:
-                    "Something went wrong loading the last active page. Check the Console for details.",
-                });
-                console.debug(err.message, err.stack);
-              });
-          } else {
-            errorToast({
-              title: "Error loading notebook",
-              description:
-                "Something went wrong reading the Notebook. Either the file is corrupted/empty or the Notebook is not a valid Notebook.",
-            });
-          }
-        };
-        reader.readAsText(file);
-      })
-      .catch((err) => {
-        errorToast({
-          title: "Error loading notebook",
-          description:
-            "Something went wrong reading the Notebook. Is the Index file missing? Check console for more details.",
-        });
-        console.debug(err.message, err.stack);
+            >;
+          } = JSON.parse(reader.result.toString());
+          notebook.pages = new Map<
+            string,
+            {
+              width: number;
+              height: number;
+              background: string;
+              nextPage: string;
+              prevPage: string;
+            }
+          >(Object.entries(notebook.pages));
+          let pagesDirHandle = await notebookDirectory.getDirectoryHandle(
+            "pages"
+          );
+          let cont = await loadPage(
+            notebook.lastActivePage,
+            pagesDirHandle,
+            undefined,
+            undefined,
+            imageDirHandle,
+            filesDirHandle
+          );
+          newPages.set(notebook.lastActivePage, cont);
+          setNotebookConfig(notebook);
+          currentPageRef.current = notebook.lastActivePage;
+          setCurrentPage(notebook.lastActivePage);
+        }
+      };
+      reader.readAsText(file);
+    }).catch((err: any) => {
+      errorToast({
+        title: "Error loading notebook",
+        description:
+          "Something went wrong reading the Notebook. Is the Index file missing? Check console for more details.",
       });
-    refreshImagesDirectory(notebookDirectory).catch((err) => {
-      console.error("Error refreshing images directory:", err);
-    });
-    refreshPagesDirectory(notebookDirectory).catch((err) => {
-      console.error("Error refreshing pages directory:", err);
+      console.debug(err.message, err.stack);
     });
   }, [notebookDirectory]);
 
   // Opens a notebook by name and sets the notebook directory handle
   const openBook = useCallback(
-    (notebookName: string) => {
+    async (notebookName: string) => {
       if (directoryHandle === undefined) {
         return Promise.reject("No directory handle set");
       }
@@ -345,13 +359,30 @@ export function useFilesystem() {
     }
   }, [currentPage]);
 
+  const setPage = useCallback(
+    (page: NotesCode.Document, id?: string) => {
+      if (!id) id = currentPage;
+      if (!id || !pages) return;
+      return Promise.resolve(
+        setPages((pages) => {
+          let newPages = structuredClone(pages);
+          newPages.set(id, page);
+          return newPages;
+        })
+      );
+    },
+    [currentPage, pages]
+  );
+
   // Loads a specific page from the pages directory
   const loadPage = useCallback(
-    (
+    async (
       page: string,
       pageDirHandle?: FileSystemDirectoryHandle,
       customPages?: Map<string, NotesCode.Document>,
-      fullReload?: boolean
+      fullReload?: boolean,
+      imageDirHandle?: FileSystemDirectoryHandle,
+      textDirHandle?: FileSystemDirectoryHandle
     ) => {
       let handle = pageDirHandle;
       if (handle === undefined) {
@@ -372,81 +403,87 @@ export function useFilesystem() {
         }
         return Promise.resolve(p);
       }
-      return handle
-        .getFileHandle(page)
-        .then((pageHandle) => {
-          return pageHandle.getFile();
-        })
-        .then((file) => {
-          return new Promise(
-            (resolve: (value: ArrayBuffer) => void, reject) => {
-              const reader = new FileReader();
+      let pageHandle = await handle.getFileHandle(page);
+      let file = await pageHandle.getFile();
+      let result = await new Promise(
+        (resolve: (value: ArrayBuffer) => void, reject) => {
+          const reader = new FileReader();
 
-              // Handle successful load
-              reader.onload = (e) => {
-                if (typeof reader.result === "object") {
-                  resolve(reader.result as ArrayBuffer);
-                } else {
-                  reject(new Error("Unexpected result type"));
-                }
-              };
-
-              // Handle errors
-              reader.onerror = () => {
-                reject(reader.error || new Error("File reading failed"));
-              };
-
-              // Initiate reading
-              reader.readAsArrayBuffer(file);
+          // Handle successful load
+          reader.onload = (e) => {
+            if (typeof reader.result === "object") {
+              resolve(reader.result as ArrayBuffer);
+            } else {
+              reject(new Error("Unexpected result type"));
             }
-          );
-        })
-        .then((result) => {
-          let pageContent = NotesCode.Document.decode(new Uint8Array(result));
-          if (updatePages) {
-            let newPages = new Map<string, NotesCode.Document>(customPages);
-            newPages.set(page, pageContent);
-            setPages(newPages);
-          }
-          return Promise.resolve(pageContent);
-        });
+          };
+
+          // Handle errors
+          reader.onerror = () => {
+            reject(reader.error || new Error("File reading failed"));
+          };
+
+          // Initiate reading
+          reader.readAsArrayBuffer(file);
+        }
+      );
+      let pageContent = NotesCode.Document.decode(new Uint8Array(result));
+      if (updatePages) {
+        let newPages = new Map<string, NotesCode.Document>(customPages);
+        newPages.set(page, pageContent);
+        setPages(newPages);
+      }
+      let contentLoadingPromises = [];
+      for (let img of pageContent.images) {
+        if (img === undefined || img.image === undefined || img.image === null)
+          continue;
+        contentLoadingPromises.push(
+          loadImage(img.image, imageDirHandle).catch((e) => {
+            console.error(e.message, e.stack);
+          })
+        );
+      }
+      for (let txt of pageContent.textBlocks) {
+        if (txt === undefined || txt.path === undefined || txt.path === null)
+          continue;
+        contentLoadingPromises.push(
+          loadText(txt.path, textDirHandle).catch((e) => {
+            console.error(e.message, e.stack);
+          })
+        );
+      }
+      await Promise.allSettled(contentLoadingPromises);
+      return pageContent;
     },
-    [pagesDirectory, pages]
+    [pagesDirectory, pages, imagesDirectory, filesDirectory]
   );
 
   // Saves the content of a specific page to the pages directory
   const savePage = useCallback(
-    (page: string, unload?: boolean, dir?: FileSystemDirectoryHandle) => {
+    async (page: string, unload?: boolean, dir?: FileSystemDirectoryHandle) => {
       if (dir === undefined) {
         dir = pagesDirectory;
       }
       if (dir === undefined) {
         return Promise.reject("No pages directory set");
       }
-      return dir
-        .getFileHandle(page)
-        .then((pageHandle) => {
-          return pageHandle.createWritable({
-            keepExistingData: false,
-          });
-        })
-        .then((writable) => {
-          let doc = pages.get(page);
-          if (doc === undefined) {
-            return Promise.reject(`Page '${page}' not found`);
-          }
-          let pageContent = NotesCode.Document.encode(doc).finish();
-          writable.write(pageContent);
-          return writable.close();
-        })
-        .then(() => {
-          if (unload) {
-            let newPages = new Map<string, NotesCode.Document>(pages);
-            newPages.delete(page);
-            return Promise.resolve(newPages);
-          }
-          return Promise.resolve(pages);
-        });
+      let pageHandle = await dir.getFileHandle(page);
+      let writable = await pageHandle.createWritable({
+        keepExistingData: false,
+      });
+      let doc = pages.get(page);
+      if (doc === undefined) {
+        return Promise.reject(`Page '${page}' not found`);
+      }
+      let pageContent = NotesCode.Document.encode(doc).finish();
+      await writable.write(pageContent);
+      await writable.close();
+      if (unload) {
+        let newPages = new Map<string, NotesCode.Document>(pages);
+        newPages.delete(page);
+        return Promise.resolve(newPages);
+      }
+      return Promise.resolve(pages);
     },
     [pagesDirectory, pages]
   );
@@ -498,7 +535,7 @@ export function useFilesystem() {
       pages.forEach((_, key) => {
         promises.push(savePage(key, unload, pagesDirectory));
       });
-      return Promise.all(promises);
+      return Promise.allSettled(promises);
     },
     [pagesDirectory, pages]
   );
@@ -637,6 +674,11 @@ export function useFilesystem() {
                 })
                 .then(() => {
                   return dirHandle.getDirectoryHandle("img", { create: true });
+                })
+                .then(() => {
+                  return dirHandle.getDirectoryHandle("files", {
+                    create: true,
+                  });
                 })
                 .then(() => {
                   return dirHandle.getDirectoryHandle("pages", {
@@ -957,6 +999,7 @@ export function useFilesystem() {
           pages: newConf,
         });
         setCurrentPage(inheriter);
+        currentPageRef.current = inheriter;
         let newPagesState = new Map<string, NotesCode.Document>(pages);
         newPagesState.delete(page);
         setPages(newPagesState);
@@ -976,16 +1019,12 @@ export function useFilesystem() {
     return Promise.allSettled(promises).finally(() => {
       setNotebookConfig(undefined);
       setCurrentPage(undefined);
+      currentPageRef.current = null;
       setPages(new Map<string, NotesCode.Document>());
+      setImageCache(new Map<string, HTMLImageElement>());
+      setTextCache(new Map<string, string>());
     });
-  }, [
-    pages,
-    saveNotebookConfig,
-    savePage,
-    setNotebookConfig,
-    setCurrentPage,
-    setPages,
-  ]);
+  }, [pages, saveNotebookConfig, savePage]);
 
   // Effect to unload the notebook and update the directory when the directory handle changes
   useEffect(() => {
@@ -1031,6 +1070,198 @@ export function useFilesystem() {
     });
   }, [notebookConfig, currentPage]);
 
+  // Cache for images
+  let [imageCache, setImageCache] = useState<Map<string, HTMLImageElement>>(
+    new Map<string, HTMLImageElement>()
+  );
+  // Loads an image from the images directory
+  const loadImage = useCallback(
+    (path: string, imgDirHandle?: FileSystemDirectoryHandle) => {
+      if (imgDirHandle === undefined) {
+        imgDirHandle = imagesDirectory;
+      }
+      if (imgDirHandle === undefined) {
+        return Promise.reject("No images directory set");
+      }
+      if (imageCache.has(path)) {
+        return Promise.resolve(imageCache.get(path) as HTMLImageElement);
+      }
+      return imgDirHandle
+        .getFileHandle(path)
+        .then((imgHandle) => {
+          return imgHandle.getFile();
+        })
+        .then((file) => {
+          return new Promise(
+            (resolve: (value: HTMLImageElement) => void, reject) => {
+              const reader = new FileReader();
+
+              // Handle successful load
+              reader.onload = (e) => {
+                let img = new Image();
+                img.src = reader.result as string;
+                setImageCache((oldCache) => {
+                  oldCache.set(path, img);
+                  return oldCache;
+                });
+                resolve(img);
+              };
+
+              // Handle errors
+              reader.onerror = () => {
+                reject(reader.error || new Error("File reading failed"));
+              };
+
+              // Initiate reading
+              reader.readAsDataURL(file);
+            }
+          );
+        });
+    },
+    [imagesDirectory]
+  );
+
+  const importImage = useCallback(
+    (image: File, imgDirHandle?: FileSystemDirectoryHandle) => {
+      if (imgDirHandle === undefined) {
+        imgDirHandle = imagesDirectory;
+      }
+      if (imgDirHandle === undefined) {
+        return Promise.reject("No images directory set");
+      }
+      let ending = image.name.split(".").pop();
+      if (ending === undefined)
+        return Promise.reject("Unsupported file type: No file extension");
+      let id = nanoid() + "." + ending;
+      return new Promise((resolve: (value: ArrayBuffer) => void, reject) => {
+        const reader = new FileReader();
+
+        // Handle successful load
+        reader.onload = (e) => {
+          if (typeof reader.result !== "object")
+            reject(
+              new Error("Unexpected result type: " + typeof reader.result)
+            );
+          resolve(reader.result as ArrayBuffer);
+        };
+
+        // Handle errors
+        reader.onerror = () => {
+          reject(reader.error || new Error("File reading failed"));
+        };
+
+        // Initiate reading
+        reader.readAsArrayBuffer(image);
+      }).then((data) => {
+        return imgDirHandle
+          .getFileHandle(id, { create: true })
+          .then((imgHandle) => {
+            return imgHandle.createWritable({
+              keepExistingData: false,
+            });
+          })
+          .then(async (writable) => {
+            await writable.write(data);
+            await writable.close();
+            return id;
+          });
+      });
+    },
+    [imagesDirectory, currentPage]
+  );
+
+  let [textCache, setTextCache] = useState<Map<string, string>>(
+    new Map<string, string>()
+  );
+  // Loads a text/code file from the pages directory
+  const loadText = useCallback(
+    (path: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) {
+        txtDirHandle = filesDirectory;
+      }
+      if (txtDirHandle === undefined) {
+        return Promise.reject("No files directory set");
+      }
+      if (textCache.has(path)) {
+        return Promise.resolve(textCache.get(path) as string);
+      }
+      return txtDirHandle
+        .getFileHandle(path)
+        .then((txtHandle) => {
+          return txtHandle.getFile();
+        })
+        .then((file) => {
+          return new Promise((resolve: (value: string) => void, reject) => {
+            const reader = new FileReader();
+
+            // Handle successful load
+            reader.onload = (e) => {
+              let txt = reader.result as string;
+              setTextCache((oldCache) => {
+                let newCache = structuredClone(oldCache);
+                newCache.set(path, txt);
+                return newCache;
+              });
+              resolve(txt);
+            };
+
+            // Handle errors
+            reader.onerror = () => {
+              reject(reader.error || new Error("File reading failed"));
+            };
+
+            // Initiate reading
+            reader.readAsText(file);
+          });
+        });
+    },
+    [filesDirectory]
+  );
+
+  // Saves a text/code file to the files directory
+  const saveText = useCallback(
+    (path: string, txt: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) {
+        txtDirHandle = filesDirectory;
+      }
+      if (txtDirHandle === undefined) {
+        return Promise.reject("No files directory set");
+      }
+      return txtDirHandle
+        .getFileHandle(path, { create: true })
+        .then((txtHandle) => {
+          return txtHandle.createWritable({
+            keepExistingData: false,
+          });
+        })
+        .then((writable) => {
+          writable.write(txt);
+          return writable.close();
+        });
+    },
+    [filesDirectory]
+  );
+
+  const selectedTool = useRef("scroll");
+  const currentPageRef = useRef<string | null>(null);
+  const pointerDownRef = useRef<boolean>(false);
+
+  const autosaveDuration = 3000; // Maybe user configurable?
+  const autosaveCurrentTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const [redrawAllPages, setRedrawAllPages] = useState(false);
+  const [redrawPage, setRedrawPage] = useState<string | null>(null);
+
+  const autosaveStart = useCallback(() => {
+    if (autosaveCurrentTimeout.current !== null) {
+      clearTimeout(autosaveCurrentTimeout.current);
+    }
+    autosaveCurrentTimeout.current = setTimeout(() => {
+      savePages(false);
+      autosaveCurrentTimeout.current = null;
+    }, autosaveDuration);
+  }, [savePages]);
+
   // Returns the state variables and functions provided by the hook
   return {
     directoryPickerAvailable,
@@ -1060,6 +1291,7 @@ export function useFilesystem() {
     savePages,
     reloadPages,
     setCurrentPage,
+    currentPageRef,
     deletePage,
     getPagesInOrder,
     setToReloadPages,
@@ -1070,5 +1302,18 @@ export function useFilesystem() {
     setStrokeColor,
     erasing,
     setErasing,
+    loadImage,
+    loadText,
+    saveText,
+    filesDirectory,
+    setPage,
+    importImage,
+    selectedTool,
+    pointerDownRef,
+    autosaveStart,
+    redrawAllPages,
+    setRedrawAllPages,
+    redrawPage,
+    setRedrawPage,
   };
 }

@@ -5,7 +5,6 @@ declare const showDirectoryPicker: (
   options?: any
 ) => Promise<FileSystemDirectoryHandle | undefined>;
 import { useState, useCallback, JSX, useEffect } from "react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -68,9 +67,8 @@ import {
 
 import { NotesCode } from "../handwriting";
 import { useToast, toast, errorToast } from "@/hooks/use-toast";
-import { useFilesystem } from "../hooks/use-filesystem";
-import CanvasEditorView from "../components/CanvasEditorView";
 import { useFilesystemContext, FilesystemProvider } from "@/components/filesystem-provider";
+import Notebook from "@/components/ScrollableEditorView";
 
 export default function NotionClone() {
   // State management
@@ -340,7 +338,7 @@ export default function NotionClone() {
   }, [notebookDirectory]);
 
   if (showCanvasEditor) {
-    return <CanvasEditorView/>;
+    return <Notebook/>;
   }
 
   return (

@@ -11,6 +11,11 @@ message Stroke {
     repeated Point points = 1;
     string color = 2;
     float width = 3;
+    // Bounding box
+    float minX = 4;
+    float minY = 5;
+    float maxX = 6;
+    float maxY = 7;
 }
 
 message Point {
@@ -28,12 +33,14 @@ message Image {
 }
 
 message TextBlock {
-    string text = 1;
-    // 1: LaTeX, 2: Markdown, 3: Code, 4: Plain Text
-    int32 renderingType = 3;
+    string path = 1;
+    int32 x = 2;
+    int32 y = 3;
+    int32 w = 4;
+    int32 h = 5;
     int32 fontSize = 6;
-    float x = 4;
-    float y = 5;
-    float scaleX = 7;
-    float scaleY = 8;
+    string fontFamily = 7;
+    string color = 8;
+    int32 contentType = 9;
+    // 1: LaTeX, 2: Markdown, 3: Code, 4: Plain Text
 }
