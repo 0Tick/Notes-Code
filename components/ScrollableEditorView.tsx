@@ -3,7 +3,6 @@ import React, {
   useRef,
   useEffect,
   useState,
-  PointerEvent,
   useImperativeHandle,
   RefObject,
   useCallback,
@@ -14,6 +13,7 @@ import { Action, ActionStack } from "./ActionStack";
 import {
   Eraser,
   Home,
+  Pen,
   PenTool,
   Plus,
   RotateCcw,
@@ -35,219 +35,11 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { PopoverPicker } from "./popOverPicker";
-type DelegatedInkTrailPresenter = {
-  updateInkTrailStartPoint: (evt: PointerEvent, style: any) => Promise<void>;
-  presentationArea: HTMLCanvasElement | null;
-};
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Slider } from "./ui/slider";
+import { FileDropZone } from "./invisibleDropper";
+import { Page, DelegatedInkTrailPresenter } from "./pageComponent";
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
-// --- Page Component ---
-interface PageProps {
-  pageID: string;
-  pageWidth: number;
-  pageHeight: number;
-  scale: number;
-  onPointerEvent?: (
-    e: PointerEvent<HTMLDivElement>,
-    type: "down" | "move" | "up",
-    pageID: string
-  ) => void;
-  strokeDiameter?: number;
-  defaultBackground?: string;
-  refObj: RefObject<{
-    update: (pageData: NotesCode.Document | undefined, size: number) => void;
-    canvasRef: RefObject<HTMLCanvasElement | null>;
-    ctxRef: RefObject<CanvasRenderingContext2D | null>;
-  } | null>;
-  presenterRef: RefObject<DelegatedInkTrailPresenter | null>;
-}
-
-export const Page: FC<PageProps> = ({
-  pageID,
-  pageWidth,
-  pageHeight,
-  scale,
-  onPointerEvent,
-  strokeDiameter = 10,
-  defaultBackground = "#FFFFFF",
-  refObj,
-  presenterRef,
-}) => {
-  const {
-    notebookConfig,
-    notebookDirectory,
-    pagesDirectory,
-    imagesDirectory,
-    pages,
-    loadPage,
-    savePage,
-    removeDirectory,
-    createDirectory,
-    setPages,
-    createPage,
-    reloadPages,
-    currentPage,
-    setCurrentPage,
-    deletePage,
-    unloadNotebook,
-    showCanvasEditor,
-    setShowCanvasEditor,
-    strokeColor,
-    setStrokeColor,
-    loadImage,
-    loadText,
-    saveText,
-  } = useFilesystemContext();
-  const [pageData, setPageData] = useState<NotesCode.Document | undefined>(
-    undefined
-  );
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  function calculateThickness(pressure: number) {
-    return strokeDiameter * pressure;
-  }
-
-  useEffect(() => {
-    if (canvasRef.current === null) return;
-    ctxRef.current = canvasRef.current?.getContext("2d");
-  }, []);
-
-  useImperativeHandle(refObj, () => {
-    return {
-      update: updateCanvas,
-      canvasRef: canvasRef,
-      ctxRef: ctxRef,
-    };
-  });
-  // Redraw strokes & images whenever pageData changes
-  function updateCanvas(
-    pageData: NotesCode.Document | undefined,
-    scale: number
-  ) {
-    const canvas = canvasRef.current;
-    if (!canvas || !pageData) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // set logical size
-    canvas.width = pageWidth;
-    canvas.height = pageHeight;
-
-    // clear
-    ctx.clearRect(0, 0, pageWidth, pageHeight);
-    // TODO draw Background here
-    if (pageData === undefined) return;
-    ctx.lineCap = "round";
-    // draw strokes
-    pageData.strokes.forEach((stroke) => {
-      ctx.strokeStyle = stroke.color || "#000000";
-      let lastpoints: any = null;
-      stroke?.points?.forEach((j) => {
-        if (lastpoints != null) {
-          ctx.beginPath();
-          ctx.lineWidth = calculateThickness(j.pressure || 1);
-          ctx.moveTo(lastpoints.x, lastpoints.y);
-          ctx.lineTo(j.x || 0, j.y || 0);
-          ctx.stroke();
-        }
-        lastpoints = { x: j.x || 0, y: j.y || 0 };
-      });
-    });
-
-    // draw images
-    for (const imgObj of pageData.images) {
-      if (typeof imgObj.image !== "string") continue;
-      loadImage(imgObj.image).then((img) => {
-        if (img === undefined) return;
-        ctx.drawImage(
-          img,
-          (imgObj.x || 0) * scale,
-          (imgObj.y || 0) * scale,
-          (imgObj.scaleX || 1) * scale,
-          (imgObj.scaleY || 1) * scale
-        );
-      });
-    }
-    setPageData(pageData);
-  }
-
-  // Wrapper pointer handlers
-  const handlePointerDown = (e: PointerEvent<HTMLDivElement>) =>
-    onPointerEvent?.(e, "down", pageID);
-  const handlePointerMove = (e: PointerEvent<HTMLDivElement>) =>
-    onPointerEvent?.(e, "move", pageID);
-  const handlePointerUp = (e: PointerEvent<HTMLDivElement>) =>
-    onPointerEvent?.(e, "up", pageID);
-
-  function onPointerEnter(e: PointerEvent<HTMLDivElement>) {
-    if ("ink" in navigator && (navigator.ink as any).requestPresenter) {
-      (navigator.ink as any)
-        .requestPresenter({ presentationArea: canvasRef.current })
-        .then((p: any) => {
-          presenterRef.current = p;
-        });
-    }
-    setCurrentPage(pageID);
-  }
-
-  return (
-    <div
-      className="relative top-0 left-0 mx-4 mb-1 bg-white shadow-md shadow-black"
-      style={{
-        width: pageWidth * scale,
-        height: pageHeight * scale,
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerEnter={onPointerEnter}
-    >
-      <div
-        className="origin-top-left will-change-transform overflow-hidden pointer-events-none"
-        style={{
-          transform: `scale(${scale})`,
-          width: pageWidth,
-          height: pageHeight,
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          className="pointer-events-none"
-          style={{
-            width: `${pageWidth}px`,
-            height: `${pageHeight}px`,
-          }}
-        />
-
-        <div
-          className="absolute top-0 left-0 w-full h-full pointer-events-none"
-          style={{ transform: `scale(${scale})` }}
-        >
-          {pageData !== undefined &&
-            pageData.textBlocks.map((tb) => (
-              <div
-                key={tb.path}
-                className="absolute whitespace-pre-wrap pointer-events-auto"
-                style={{
-                  left: tb.x || 0,
-                  top: tb.y || 0,
-                  width: tb.w || 0,
-                  height: tb.h || 0,
-                  fontSize: tb.fontSize || 0,
-                  fontFamily: tb.fontFamily || "",
-                  color: tb.color || "",
-                  // if you want to prevent text from zooming too much, invert part of the scale:
-                  // transform: `scale(${1/scale})`,
-                  // transformOrigin: 'top left',
-                }}
-              >
-                {}
-              </div>
-            ))}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // --- Notebook Component ---
 
@@ -256,11 +48,8 @@ export default function Notebook() {
   const PAGE_H = 1000;
   const {
     pages,
-    setPages,
     createPage,
-    reloadPages,
     currentPage,
-    setCurrentPage,
     deletePage,
     unloadNotebook,
     showCanvasEditor,
@@ -272,6 +61,17 @@ export default function Notebook() {
     setPage,
     savePages,
     loadPage,
+    importImage,
+    imagesDirectory,
+    currentPageRef,
+    selectedTool,
+    pointerDownRef,
+    autosaveStart,
+    loadImage,
+    redrawAllPages,
+    setRedrawAllPages,
+    redrawPage,
+    setRedrawPage,
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
   const actionStack = useRef<ActionStack>(
@@ -281,23 +81,9 @@ export default function Notebook() {
       setPage: setPage,
     })
   );
-  const refsMap = useRef<
-    Map<
-      string,
-      RefObject<{
-        update: (
-          pageData: NotesCode.Document | undefined,
-          size: number
-        ) => void;
-        canvasRef: React.RefObject<HTMLCanvasElement | null>;
-        ctxRef: React.RefObject<CanvasRenderingContext2D | null>;
-      } | null>
-    >
-  >(new Map());
 
-  const [drawing, setDrawing] = useState(false);
+  const drawing = useRef(false);
   const presenter = useRef<DelegatedInkTrailPresenter | null>(null);
-  const [erase, setErase] = useState(false);
   const [onlyPen, setOnlyPen] = useState(false);
   const [points, setPoints] = useState<NotesCode.Point[]>([]);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -314,18 +100,7 @@ export default function Notebook() {
       color: strokeColor,
     }));
   }, [strokeColor]);
-  // Undo / Redo eventlisteners
-  useEffect(() => {
-    document.addEventListener("keyup", function (event) {
-      if (event.ctrlKey && event.key === "z") {
-        actionStack.current.undo();
-        event.preventDefault();
-      } else if (event.ctrlKey && event.key === "y") {
-        actionStack.current.redo();
-        event.preventDefault();
-      }
-    });
-  }, []);
+
   // update actionStack state when pages or currentPage changes
   useEffect(() => {
     actionStack.current.state.pages = pages;
@@ -334,22 +109,6 @@ export default function Notebook() {
   }, [pages, currentPage, setPage]);
 
   let [orderedPages, setOrderedPages] = useState<string[]>([]);
-  // Keep orderedPages in sync with pages and redraw on change
-  useEffect(() => {
-    if (pages === undefined || pages.size === 0) return;
-    getPagesInOrder()
-      .then((pgs) => setOrderedPages(pgs))
-      .catch((err) => console.error(err.message, err.stack));
-    // Rerender all Pages
-    for (const [pageID, refObj] of refsMap.current) {
-      let pageData = pages.get(pageID);
-      if (pageData === undefined) {
-        loadPage(pageID);
-        continue;
-      }
-      refObj.current?.update(pageData, scale);
-    }
-  }, [pages]);
 
   function erasePage() {
     if (!actionStack.current) return;
@@ -375,6 +134,7 @@ export default function Notebook() {
     }
     if (currentPage === undefined || pages === undefined) return;
     actionStack.current?.addAction(new ErasePageAction(currentPage));
+    autosaveStart();
   }
 
   function checkLineIntersection(
@@ -495,30 +255,47 @@ export default function Notebook() {
     }
   }
 
-  function pointerDown(x: number, y: number, pointerType: string) {
+  function pointerDown(
+    x: number,
+    y: number,
+    pointerType: string,
+    pageID: string,
+    pressure: number
+  ) {
     if (pointerType !== "pen" && onlyPen) return;
-    setDrawing(true);
+    drawing.current = true;
+    pointerDownRef.current = true;
     lastPointRef.current = {
       x: x,
       y: y,
     };
-    setPoints([]);
+    currentPageRef.current = pageID;
+    const firstPoint = new NotesCode.Point({
+      x: x,
+      y: y,
+      pressure: pointerType === "touch" ? 0.5 : pressure,
+    });
+    setPoints([firstPoint]);
   }
 
   const pointerMove = (
-    evt: any,
+    evt: PointerEvent,
     pointerType: string,
     pressure: number,
     x: number,
     y: number,
-    erase: boolean
+    canvas: RefObject<HTMLCanvasElement | null>
   ) => {
-    if (currentPage === undefined) return;
-    const ctxRef = refsMap.current.get(currentPage)?.current?.ctxRef;
-    if (ctxRef === undefined || !ctxRef.current) return;
-    if (!drawing || (pointerType !== "pen" && onlyPen)) return;
-    const ctx = ctxRef.current;
-    ctx.globalAlpha = erase ? 0.5 : 1;
+    if (
+      currentPageRef.current === null ||
+      selectedTool.current == "scroll" ||
+      canvas.current === null
+    )
+      return;
+    const ctx = canvas.current.getContext("2d");
+    if (ctx === undefined || ctx === null) return;
+    if (!drawing.current || (pointerType !== "pen" && onlyPen)) return;
+    ctx.globalAlpha = selectedTool.current == "eraser" ? 0.5 : 1;
     ctx.strokeStyle = style.color;
     ctx.lineWidth =
       pointerType === "touch"
@@ -543,17 +320,23 @@ export default function Notebook() {
       }),
     ]);
     if (presenter.current !== null) {
-      presenter.current.updateInkTrailStartPoint(evt, style);
+      let st = structuredClone(style);
+      st.diameter =
+        pointerType === "touch"
+          ? calculateThickness(0.5)
+          : calculateThickness(pressure);
+      if (st.diameter < 1) st.diameter = 1;
+      presenter.current.updateInkTrailStartPoint(evt, st);
     }
   };
 
   const pointerUp = useCallback(() => {
-    setDrawing(false);
-    if (!drawing || !pages || !currentPage) return;
+    if (!drawing.current || !pages || !currentPageRef.current) return;
+    drawing.current = false;
     lastPointRef.current = null;
-    if (!erase) {
+    if (selectedTool.current == "pen") {
       dontShow.current = true;
-      let prev = pages.get(currentPage);
+      let prev = pages.get(currentPageRef.current);
 
       if (!prev) return;
       actionStack.current.addAction(
@@ -563,15 +346,16 @@ export default function Notebook() {
             color: style.color,
             width: style.diameter,
           }),
-          currentPage
+          currentPageRef.current
         )
       );
-    } else {
-      let page = pages.get(currentPage);
+      autosaveStart();
+    } else if (selectedTool.current == "eraser") {
+      let page = pages.get(currentPageRef.current);
       if (page === undefined) return;
       const deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[] = [];
       const newStrokes: NotesCode.Stroke[] = [];
-      if (erase && points.length >= 2) {
+      if (points.length >= 2) {
         const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
         for (let i = 1; i < points.length; i++) {
           eraserSegments.push([points[i - 1], points[i]]);
@@ -607,14 +391,24 @@ export default function Notebook() {
           checkStroke(stroke as NotesCode.Stroke);
         }
         actionStack.current.addAction(
-          new DeleteStrokesAction(deletedStrokes, newStrokes, currentPage)
+          new DeleteStrokesAction(
+            deletedStrokes,
+            newStrokes,
+            currentPageRef.current
+          )
         );
+        autosaveStart();
       }
     }
-  }, [erase, points, pages, currentPage]);
+  }, [points, pages, currentPage]);
 
   const handlePointerEvent = useCallback(
-    (e: any, type: "down" | "move" | "up", pageID: string) => {
+    (
+      e: React.PointerEvent<HTMLDivElement>,
+      type: "down" | "move" | "up",
+      pageID: string,
+      canvas: RefObject<HTMLCanvasElement | null>
+    ) => {
       const target = e.currentTarget;
       const rect = target.getBoundingClientRect();
       const px = (e.clientX - rect.left) / scale;
@@ -623,18 +417,24 @@ export default function Notebook() {
       const pressure = e.nativeEvent.pressure;
       switch (type) {
         case "down":
-          pointerDown(px, py, pointerType);
+          pointerDown(px, py, pointerType, pageID, pressure);
           break;
         case "move":
-          if (!drawing) return;
-          pointerMove(e.nativeEvent, pointerType, pressure, px, py, erase);
+          if (!drawing.current && pageID !== currentPageRef.current) {
+            lastPointRef.current = {
+              x: px,
+              y: py,
+            };
+            return;
+          }
+          pointerMove(e.nativeEvent, pointerType, pressure, px, py, canvas);
           break;
         case "up":
           pointerUp();
           break;
       }
     },
-    [erase, drawing, points]
+    [points]
   );
 
   const zoomIn = () => setScale((s) => Math.min(s + 0.25, 4));
@@ -761,6 +561,187 @@ export default function Notebook() {
     unloadNotebook();
   };
 
+  const [strokeSizes, setStrokeSizes] = useState<number[]>([]);
+  const [currentStroke, setCurrentStrokeSize] = useState(2);
+
+  // Inside Notebook component -> onDrop function
+
+  const onDrop = useCallback(
+    (acceptedFiles: FileList) => {
+      if (imagesDirectory === undefined || currentPage === undefined) return;
+
+      for (let i = 0; i < acceptedFiles.length; i++) {
+        const item = acceptedFiles.item(i);
+        if (item == null || !item.type.startsWith("image/")) continue;
+
+        importImage(item, imagesDirectory)
+          .then((id) => {
+            if (!id) throw new Error("Image import failed to return an ID.");
+
+            // Load the image to get its dimensions
+            return loadImage(id, imagesDirectory).then((img) => {
+              if (!img || img.naturalWidth === 0) {
+                throw new Error(
+                  "Failed to load image or image has no dimensions."
+                );
+              }
+
+              const page = pages.get(currentPage);
+              if (!page) return;
+
+              const pageConf = notebookConfig?.pages.get(currentPage);
+              const pageWidth = pageConf?.width || PAGE_W;
+              const pageHeight = pageConf?.height || PAGE_H;
+
+              // --- This is the key logic ---
+              let initialScale = 1.0; // Default to 1 (original size)
+
+              const isWiderThanPage = img.naturalWidth > pageWidth;
+              const isTallerThanPage = img.naturalHeight > pageHeight;
+
+              // Only calculate a new scale if the image is too big for the page.
+              if (isWiderThanPage || isTallerThanPage) {
+                const widthRatio = pageWidth / img.naturalWidth;
+                const heightRatio = pageHeight / img.naturalHeight;
+                // Use the smaller ratio to ensure the entire image fits while maintaining aspect ratio.
+                initialScale = Math.min(widthRatio, heightRatio);
+              }
+              // --- End of key logic ---
+
+              const newPage = structuredClone(page);
+              newPage.images.push({
+                image: id,
+                x: 0,
+                y: 0,
+                // Use the calculated "fit-to-page" scale, or 1.0 if it already fits.
+                scaleX: initialScale,
+                scaleY: initialScale,
+              });
+
+              setPage(newPage, currentPage);
+
+              toast({
+                title: "Image Imported",
+                description: "The image has been added to the current page.",
+              });
+            });
+          })
+          .catch((e) => {
+            console.error(
+              "Error processing dropped image:",
+              e.message,
+              e.stack
+            );
+            toast({
+              title: "Error",
+              description: "Failed to import image.",
+              variant: "destructive",
+            });
+          });
+      }
+    },
+    // Ensure all dependencies are here
+    [
+      imagesDirectory,
+      currentPage,
+      pages,
+      notebookConfig,
+      importImage,
+      loadImage,
+      setPage,
+      PAGE_W,
+      PAGE_H,
+    ]
+  );
+  // Undo / Redo eventlisteners, Load stroke Sizes from Local Storage
+  useEffect(() => {
+    document.addEventListener("keyup", function (event) {
+      if (event.ctrlKey && event.key === "z") {
+        actionStack.current.undo();
+        autosaveStart();
+        event.preventDefault();
+      } else if (event.ctrlKey && event.key === "y") {
+        actionStack.current.redo();
+        autosaveStart();
+        event.preventDefault();
+      }
+    });
+    document.addEventListener(
+      "wheel",
+      function (event) {
+        if (event.ctrlKey) {
+          event.preventDefault();
+          if (event.deltaY > 0) {
+            zoomOut();
+            setRedrawAllPages(true);
+          } else if (event.deltaY < 0) {
+            zoomIn();
+            setRedrawAllPages(true);
+          }
+        }
+      },
+      { passive: false }
+    );
+    let strokes = localStorage.getItem("strokes");
+    if (strokes === null) {
+      localStorage.setItem(
+        "strokes",
+        JSON.stringify({ sizes: [3, 6, 10], current: currentStroke })
+      );
+    } else {
+      let strokesObj: { sizes: number[]; current: number } =
+        JSON.parse(strokes);
+      setStrokeSizes(strokesObj.sizes);
+      setCurrentStrokeSize(strokesObj.current);
+    }
+  }, []);
+
+  // Keep orderedPages in sync with pages and redraw on change
+  useEffect(() => {
+    if (pages === undefined || pages.size === 0 || notebookConfig === undefined)
+      return;
+    getPagesInOrder()
+      .then((pgs) => {
+        setOrderedPages(pgs);
+      })
+      .catch((err) => console.error(err.message, err.stack));
+  }, [pages, notebookConfig]);
+
+  useEffect(() => {
+    console.log("Current page:", currentPage);
+  }, [currentPage]);
+
+  function updateStrokeSize(newSize: number) {
+    const newStrokeSizes = [...strokeSizes];
+    // Update the size at the currently active index
+    newStrokeSizes[currentStroke] = Math.round(newSize);
+    setStrokeSizes(newStrokeSizes);
+
+    // Update the drawing style immediately
+    setStyle((s) => ({
+      ...s,
+      diameter: Math.round(newSize),
+    }));
+
+    // Persist to localStorage
+    localStorage.setItem(
+      "strokes",
+      JSON.stringify({ sizes: newStrokeSizes, current: currentStroke })
+    );
+  }
+
+  function setStroke(i: number) {
+    setCurrentStrokeSize(i);
+    localStorage.setItem(
+      "strokes",
+      JSON.stringify({ sizes: strokeSizes, current: i })
+    );
+    setStyle((s) => ({
+      ...s,
+      diameter: strokeSizes[i],
+    }));
+  }
+
   if (!!!showCanvasEditor) {
     return <></>;
   }
@@ -780,7 +761,7 @@ export default function Notebook() {
   }
 
   return (
-    <div className="h-screen w-screen">
+    <div className="h-screen w-screen overflow-hidden">
       {/* Toolbar */}
       <div className="static z-1 flex top-0 m-auto h-14 width-100 items-center bg-[#191919] gap-2 self-stretch">
         <div className="flex justify-evenly h-full m-1 rounded-md ">
@@ -817,6 +798,30 @@ export default function Notebook() {
             {(scale * 100).toFixed(0)}%
           </span>
           <button onClick={zoomIn}>+</button>
+          <div className="w-4"></div>
+          <Button
+            onClick={() => {
+              actionStack.current.undo();
+              autosaveStart();
+            }}
+            className={`${
+              actionStack.current.canUndo() ? "text-white" : "text-gray-400"
+            } self-center bg-transparent hover:bg-[#333]`}
+          >
+            ↶
+          </Button>
+          <div className="w-1"></div>
+          <Button
+            onClick={() => {
+              actionStack.current.redo();
+              autosaveStart();
+            }}
+            className={`${
+              actionStack.current.canRedo() ? "text-white" : "text-gray-400"
+            } self-center bg-transparent hover:bg-[#333]`}
+          >
+            ↷
+          </Button>
         </div>
         <div className="flex items-center h-full gap-2 place-self-center m-auto ">
           {/* Switch to Pencil*/}
@@ -827,12 +832,17 @@ export default function Notebook() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleButtonClick("pencil", () => setErase(false))
+                    handleButtonClick(
+                      "pencil",
+                      () =>
+                        (selectedTool.current =
+                          selectedTool.current == "pen" ? "scroll" : "pen")
+                    )
                   }
                   className={getButtonClasses(
                     "pencil",
                     `${
-                      !erase
+                      selectedTool.current == "pen"
                         ? "bg-blue-600 text-white hover:bg-blue-700"
                         : "text-gray-400 hover:text-white hover:bg-[#333]"
                     }`
@@ -854,12 +864,19 @@ export default function Notebook() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleButtonClick("eraser", () => setErase(true))
+                    handleButtonClick(
+                      "eraser",
+                      () =>
+                        (selectedTool.current =
+                          selectedTool.current == "eraser"
+                            ? "scroll"
+                            : "eraser")
+                    )
                   }
                   className={getButtonClasses(
                     "eraser",
                     `${
-                      erase
+                      selectedTool.current == "eraser"
                         ? "bg-red-600 text-white hover:bg-red-700"
                         : "text-gray-400 hover:text-white hover:bg-[#333]"
                     }`
@@ -873,7 +890,6 @@ export default function Notebook() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
         </div>
         <div className="flex items-center h-full gap-2 align-middle mr-0">
           {/* Add Page Dropdown */}
@@ -919,6 +935,103 @@ export default function Notebook() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
+          {/* Stroke Size Selector */}
+          {strokeSizes.map((size, i) => {
+            const isActive = i === currentStroke;
+            return (
+              <TooltipProvider key={i}>
+                <Tooltip>
+                  {isActive ? (
+                    // ACTIVE STROKE: Show a Popover to adjust the size
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={getButtonClasses(
+                              `stroke-${i}`,
+                              "relative flex items-center justify-center rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                            )}
+                          >
+                            <div
+                              className="w-3/4 rounded-full"
+                              style={{
+                                height: `${Math.max(2, size / 1.5)}px`,
+                                backgroundColor: "currentColor",
+                              }}
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 bg-[#333] border-[#444] text-white">
+                        <div className="grid gap-4">
+                          <div className="space-y-2">
+                            <h4 className="font-medium leading-none">
+                              Pen Size
+                            </h4>
+                            <p className="text-sm text-gray-400">
+                              Adjust the active pen size.
+                            </p>
+                          </div>
+                          <div className="grid gap-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-sm">
+                                {size.toFixed(0)}px
+                              </span>
+                            </div>
+                            <Slider
+                              defaultValue={[size]}
+                              max={50}
+                              min={1}
+                              step={1}
+                              onValueChange={(value) =>
+                                updateStrokeSize(value[0])
+                              }
+                            />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    // INACTIVE STROKE: Show a button to select it
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          handleButtonClick(`stroke-${i}`, () => setStroke(i))
+                        }
+                        className={getButtonClasses(
+                          `stroke-${i}`,
+                          "relative flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-[#333]"
+                        )}
+                      >
+                        <div
+                          className="w-3/4 rounded-full"
+                          style={{
+                            height: `${Math.max(2, size / 1.5)}px`,
+                            backgroundColor: "currentColor",
+                          }}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                  )}
+                  <TooltipContent className="bg-[#333] text-white border-[#444]">
+                    <p>
+                      {isActive
+                        ? `Current size: ${size}px (Click to edit)`
+                        : `Set stroke size to ${size}px`}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+
+          {/* Divider for visual separation */}
+          <div className="h-6 w-px bg-gray-600 mx-1"></div>
           {/* Erase Page Button */}
           <TooltipProvider>
             <TooltipProvider>
@@ -986,37 +1099,31 @@ export default function Notebook() {
       </div>
 
       {/* Scrollable notebook */}
-      <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
-        <div className="grid justify-items-center py-8">
-          {orderedPages.map((pageId) => {
-            let page = pages.get(pageId);
-            let conf = notebookConfig?.pages.get(pageId);
-            // Create a React ref for this page
-            const pageRef = React.createRef<{
-              update: (
-                pageData: NotesCode.Document | undefined,
-                size: number
-              ) => void;
-              canvasRef: React.RefObject<HTMLCanvasElement | null>;
-              ctxRef: React.RefObject<CanvasRenderingContext2D | null>;
-            }>();
-            refsMap.current.set(pageId, pageRef);
-            return (
-              <Page
-                key={pageId}
-                pageID={pageId}
-                pageWidth={conf?.width || PAGE_W}
-                pageHeight={conf?.height || PAGE_H}
-                scale={scale}
-                onPointerEvent={handlePointerEvent}
-                refObj={pageRef}
-                presenterRef={presenter}
-                strokeDiameter={style.diameter}
-              />
-            );
-          })}
+      <FileDropZone onFilesDrop={onDrop}>
+        <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
+          <div className="grid justify-items-center py-8">
+            {pages !== undefined &&
+              pages.size > 0 &&
+              orderedPages.map((pageId) => {
+                let page = pages.get(pageId);
+                let conf = notebookConfig?.pages.get(pageId);
+                return (
+                  <Page
+                    key={pageId}
+                    pageID={pageId}
+                    pageWidth={conf?.width || PAGE_W}
+                    pageHeight={conf?.height || PAGE_H}
+                    scale={scale}
+                    onPointerEvent={handlePointerEvent}
+                    presenterRef={presenter}
+                    strokeDiameter={style.diameter}
+                    pageData={page}
+                  />
+                );
+              })}
+          </div>
         </div>
-      </div>
+      </FileDropZone>
     </div>
   );
 }
