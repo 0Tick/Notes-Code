@@ -39,6 +39,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Slider } from "./ui/slider";
 import { FileDropZone } from "./invisibleDropper";
 import { Page, DelegatedInkTrailPresenter } from "./pageComponent";
+import { Editor } from "@monaco-editor/react";
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
 
 // --- Notebook Component ---
@@ -72,6 +73,9 @@ export default function Notebook() {
     setRedrawAllPages,
     redrawPage,
     setRedrawPage,
+    loadText,
+    saveText, 
+    filesDirectory
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
   const actionStack = useRef<ActionStack>(
@@ -93,6 +97,21 @@ export default function Notebook() {
     diameter: 8,
     backgroundColor: "#222222",
   });
+
+
+  const [showMonaco, setShowMonaco] = useState(false);
+  const [monacoValue, setMonacoValue] = useState("");
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [codeLanguage, setCodeLanguage] = useState<string[]>([
+    "javascript", 
+    "typescript",
+    "python", 
+    "markdown", 
+    "plaintext", 
+    "cpp"
+  ])
+  // ...
+
 
   useEffect(() => {
     setStyle((s) => ({
@@ -745,6 +764,35 @@ export default function Notebook() {
   if (!!!showCanvasEditor) {
     return <></>;
   }
+
+  if (showMonaco){
+    return   <>
+    <Editor
+      height="80vh"
+      language={codeLanguage[0]}
+      value={monacoValue}
+      onChange={(value:any) => setMonacoValue(value ?? "")}
+      options={{ lineNumbers: "on", minimap: { enabled: false } }}
+    />
+    <Button
+      onClick={async () => {
+        if (currentFilePath) {
+          await saveText(currentFilePath, codeLanguage[0] + "\n" + monacoValue, filesDirectory);
+        }
+      }}
+    >
+      Speichern
+    </Button>
+    <Button onClick={() => setShowMonaco(false)}>Zurück</Button>
+    <Button onClick={() => {
+      const first = codeLanguage[0];
+      setCodeLanguage((l) => [...l.slice(1), first]);
+    }}>{codeLanguage[0]}</Button>
+  </>
+    
+
+  }
+
   if (pages === undefined || (currentPage !== undefined && pages.size === 0)) {
     return (
       <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
@@ -891,6 +939,36 @@ export default function Notebook() {
             </Tooltip>
           </TooltipProvider>
         </div>
+              <Button
+        onClick={async () => {
+          // Beispiel: Dateiname dynamisch setzen (hier: aktuelle Seite + ".txt")
+          const filePath = currentPage ? `${currentPage}.txt` : "untitled.txt";
+          try {
+            const content = await loadText(filePath, filesDirectory);
+            const lang = content.split("\n").slice(0,1).join("\n");
+            console.log(lang);
+            console.log(content, "hello");
+            if (codeLanguage.includes(lang)){
+              const index = codeLanguage.indexOf(lang);
+              const before = codeLanguage.slice(0, index-1);
+              const after = codeLanguage.slice(index);
+              setCodeLanguage((l) => [...after, lang, ...before]);
+              console.log(":+1");
+            }
+            setMonacoValue(content.split("\n").slice(1).join("\n") ?? "");
+            setCurrentFilePath(filePath);
+            setShowMonaco(true);
+          } catch (e) {
+            // Datei existiert noch nicht → leeren Editor öffnen
+            setMonacoValue("");
+            setCurrentFilePath(filePath);
+            setShowMonaco(true);
+          }
+        }}
+      >
+        Datei im Editor öffnen
+      </Button>
+
         <div className="flex items-center h-full gap-2 align-middle mr-0">
           {/* Add Page Dropdown */}
           <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
