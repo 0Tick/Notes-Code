@@ -93,6 +93,13 @@ export default function Notebook() {
     deleteFile,
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
+  const [showNewPageModal, setShowNewPageModal] = useState(false);
+  const [newPageTitle, setNewPageTitle] = useState("after");
+  const [newPageWidth, setNewPageWidth] = useState("815");
+  const [newPageHeight, setNewPageHeight] = useState("1152");
+  const [pageOrientation, setPageOrientation] = useState<
+    "portrait" | "landscape"
+  >("portrait");
   const actionStack = useRef<ActionStack>(
     new ActionStack(10, {
       pages: pages,
@@ -477,6 +484,10 @@ export default function Notebook() {
     if (callback) callback();
   };
 
+  const openNewPageModal = useCallback(() => {
+    setShowNewPageModal(true);
+  }, []);
+
   // Get button classes with animation
   const getButtonClasses = (buttonId: string, baseClasses: string) => {
     const isClicked = clickedButton === buttonId;
@@ -486,6 +497,26 @@ export default function Notebook() {
         : ""
     }`;
   };
+
+  const createNewPage = useCallback(() => {
+    if (newPageTitle) {
+      // Validate or assert newPageTitle as PageCreationInsertPosition
+      const insertPosition: PageCreationInsertPosition = newPageTitle as PageCreationInsertPosition;
+      console.log("Creating new page with insert mode:", insertPosition);
+      createPage(undefined, {
+        insert: insertPosition,
+        width: parseInt(newPageWidth, 10),
+        height: parseInt(newPageHeight, 10),
+        background: "default",
+      }).then(() => {
+        setNewPageTitle("after");
+        setShowNewPageModal(false);
+        setNewPageWidth("815");
+        setNewPageHeight("1152");
+        setPageOrientation("portrait");
+      });
+    }
+  }, [newPageTitle, newPageWidth, newPageHeight, pageOrientation, createPage]);
 
   function createPageWithToast(insert: PageCreationInsertPosition) {
     createPage(undefined, { insert: insert })
