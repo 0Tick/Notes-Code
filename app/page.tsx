@@ -814,3 +814,4 @@ export default function NotionClone() {
     </div>
   );
 }
+  
