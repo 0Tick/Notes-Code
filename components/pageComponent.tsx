@@ -2,6 +2,7 @@ import { NotesCode } from "@/handwriting";
 import { RefObject, FC, useRef, useEffect, useImperativeHandle } from "react";
 import { CanvasImage } from "./CanvasImage";
 import { useFilesystemContext } from "./filesystem-provider";
+import CodeBlock from "./CodeBlock";
 
 export type DelegatedInkTrailPresenter = {
   updateInkTrailStartPoint: (evt: PointerEvent, style: any) => Promise<void>;
@@ -154,8 +155,14 @@ export const Page: FC<PageProps> = ({
                 imageMeta={imageMeta as NotesCode.Image}
               />
             ))}
+        </div>{/*container for text blocks */}
+        <div>
+          {pageData &&
+            pageData.textBlocks&&
+            pageData.textBlocks.map((textBlock) => {
+              return <CodeBlock key={textBlock.path} textBlock={textBlock} theme="github-dark"/>;
+            })}
         </div>
-
         {/* canvas for strokes */}
         <canvas
           ref={canvasref}
@@ -163,10 +170,7 @@ export const Page: FC<PageProps> = ({
           style={{ width: pageWidth, height: pageHeight }}
         />
 
-        {/*container for text blocks */}
-        <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-          {/* ... text block rendering logic ... */}
-        </div>
+        
       </div>
     </div>
   );
