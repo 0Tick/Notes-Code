@@ -811,28 +811,7 @@ export default function NotionClone() {
 
         </div>
       </div>
-
-      {/* Quick Actions Button */}
-      <div className="fixed bottom-6 right-6">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                className="h-12 w-12 rounded-full bg-white text-black hover:bg-gray-200 shadow-lg"
-                onClick={openNewPageModal}
-              >
-                <PenSquare className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent
-              side="left"
-              className="bg-[#333] text-white border-[#444]"
-            >
-              <p>New page</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
     </div>
   );
 }
+  
