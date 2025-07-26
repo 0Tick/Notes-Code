@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { errorToast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
+import { getHighlighter } from "@/lib/highlighter";
 
 // Declaration for the experimental showDirectoryPicker API
 declare const showDirectoryPicker: (
@@ -34,6 +35,7 @@ export function useFilesystem() {
         setDirectoryStack([dirHandle]);
       });
     }
+    getHighlighter();
   }, []);
 
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
