@@ -14,11 +14,8 @@ export async function getHighlighter() {
   return highlighter;
 }
 
-export function setupMonaco(monacoInstance: typeof monaco) {
-  if (!highlighter) {
-    console.error("Shiki highlighter not initialized yet.");
-    return;
-  }
+export async function setupMonaco(monacoInstance: typeof monaco) {
+  const highlighter = await getHighlighter();
   // Register languages
   monacoInstance.languages.register({ id: "vue" });
   monacoInstance.languages.register({ id: "typescript" });

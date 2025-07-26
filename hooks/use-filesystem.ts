@@ -35,7 +35,13 @@ export function useFilesystem() {
         setDirectoryStack([dirHandle]);
       });
     }
-    getHighlighter();
+    (async () => {
+      try {
+        await getHighlighter();
+      } catch (error) {
+        errorToast("Failed to initialize highlighter: " + error.message);
+      }
+    })();
   }, []);
 
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
