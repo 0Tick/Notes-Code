@@ -494,11 +494,11 @@ export default function Notebook() {
 
   const createNewPage = useCallback(() => {
     if (newPageTitle) {
-      // In a real app, we would create the page here
-      console.log("Creating new page with insert mode:", newPageTitle);
+      // Validate or assert newPageTitle as PageCreationInsertPosition
+      const insertPosition: PageCreationInsertPosition = newPageTitle as PageCreationInsertPosition;
+      console.log("Creating new page with insert mode:", insertPosition);
       createPage(undefined, {
-        //@ts-expect-error
-        insert: newPageTitle,
+        insert: insertPosition,
         width: parseInt(newPageWidth, 10),
         height: parseInt(newPageHeight, 10),
         background: "default",
@@ -1028,7 +1028,10 @@ export default function Notebook() {
                   <RadioGroup
                     className="flex gap-4 mt-2"
                     onValueChange={(value: "portrait" | "landscape") => {
-                      if (pageOrientation !== value) {
+                      if (pageOrientation === "portrait" && value === "landscape") {
+                        setNewPageWidth(newPageHeight);
+                        setNewPageHeight(newPageWidth);
+                      } else if (pageOrientation === "landscape" && value === "portrait") {
                         setNewPageWidth(newPageHeight);
                         setNewPageHeight(newPageWidth);
                       }
@@ -1091,7 +1094,7 @@ export default function Notebook() {
                 <Button
                   className="bg-white text-black hover:bg-gray-200"
                   onClick={createNewPage}
-                  disabled={!newPageTitle.trim()}
+                  disabled={!["first", "last", "before", "after"].includes(newPageTitle)}
                 >
                   Create
                 </Button>
