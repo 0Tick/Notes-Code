@@ -1218,6 +1218,28 @@ export function useFilesystem() {
     [filesDirectory]
   );
 
+const deleteFile = useCallback(
+  async (filename: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+    if (txtDirHandle === undefined) txtDirHandle = filesDirectory;
+    if (!txtDirHandle) {
+      return Promise.reject("Files directory not set");
+    }
+    try {
+      await txtDirHandle.removeEntry(filename);
+      // Optional: ggf. aus dem Cache entfernen!
+      setTextCache((oldCache) => {
+        const newCache = new Map(oldCache);
+        newCache.delete(filename);
+        return newCache;
+      });
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  },
+  [filesDirectory, setTextCache]
+);
+
   // Saves a text/code file to the files directory
   const saveText = useCallback(
     (path: string, txt: string, txtDirHandle?: FileSystemDirectoryHandle) => {
@@ -1304,6 +1326,7 @@ export function useFilesystem() {
     setErasing,
     loadImage,
     loadText,
+    deleteFile,
     saveText,
     filesDirectory,
     setPage,
