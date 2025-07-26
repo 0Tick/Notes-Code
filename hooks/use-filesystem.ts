@@ -797,15 +797,18 @@ export function useFilesystem() {
             "available"
         );
       }
-      if (options === undefined) {
-        options = {
-          insert: "after",
-          width: 800,
-          height: 600,
-          background: "default",
-        };
-      }
-      let insert = options.insert || "after";
+      
+      const defaultOptions = {
+        insert: "after" as PageCreationInsertPosition,
+        width: 815,
+        height: 1152,
+        background: "default",
+      };
+
+      const finalOptions = { ...defaultOptions, ...options };
+      if (isNaN(finalOptions.width)) finalOptions.width = defaultOptions.width;
+      if (isNaN(finalOptions.height)) finalOptions.height = defaultOptions.height;
+
       let id = nanoid();
       return handle
         .getFileHandle(id, { create: true })
@@ -833,9 +836,9 @@ export function useFilesystem() {
             }
           >(notebookConfig.pages);
           let newPage = {
-            width: options.width || 600,
-            height: options.height || 800,
-            background: options.background || "default",
+            width: finalOptions.width,
+            height: finalOptions.height,
+            background: finalOptions.background,
             nextPage: "",
             prevPage: "",
           };
@@ -843,7 +846,7 @@ export function useFilesystem() {
           if (currPage === undefined) {
             return Promise.reject("Current page not found");
           }
-          switch (options.insert) {
+          switch (finalOptions.insert) {
             case "first":
               let prevPageConf = newPgs.get(currentPage);
               if (prevPageConf === undefined) {
@@ -1242,7 +1245,7 @@ export function useFilesystem() {
     [filesDirectory]
   );
 
-  const selectedTool = useRef("scroll");
+  const selectedTool = useRef("pen");
   const currentPageRef = useRef<string | null>(null);
   const pointerDownRef = useRef<boolean>(false);
 
