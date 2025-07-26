@@ -74,8 +74,9 @@ export default function Notebook() {
     redrawPage,
     setRedrawPage,
     loadText,
-    saveText, 
-    filesDirectory
+    saveText,
+    filesDirectory,
+    deleteFile
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
   const actionStack = useRef<ActionStack>(
@@ -103,14 +104,21 @@ export default function Notebook() {
   const [monacoValue, setMonacoValue] = useState("");
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [codeLanguage, setCodeLanguage] = useState<string[]>([
-    "javascript", 
+    "javascript",
     "typescript",
-    "python", 
-    "markdown", 
-    "plaintext", 
+    "python",
+    "markdown",
+    "plaintext",
     "cpp"
   ])
-  // ...
+  const languageEndings: { [key: string]: string } = {
+    "javascript": "js",
+    "typescript": "ts",
+    "python": "py",
+    "markdown": "md",
+    "plaintext": "txt",
+    "cpp": "cpp"
+  }
 
 
   useEffect(() => {
@@ -473,11 +481,10 @@ export default function Notebook() {
   // Get button classes with animation
   const getButtonClasses = (buttonId: string, baseClasses: string) => {
     const isClicked = clickedButton === buttonId;
-    return `${baseClasses} transition-all duration-200 ${
-      isClicked
+    return `${baseClasses} transition-all duration-200 ${isClicked
         ? "scale-110 bg-blue-500 text-white shadow-lg shadow-blue-500/50"
         : ""
-    }`;
+      }`;
   };
 
   function createPageWithToast(insert: PageCreationInsertPosition) {
@@ -765,31 +772,42 @@ export default function Notebook() {
     return <></>;
   }
 
-  if (showMonaco){
-    return   <>
-    <Editor
-      height="80vh"
-      language={codeLanguage[0]}
-      value={monacoValue}
-      onChange={(value:any) => setMonacoValue(value ?? "")}
-      options={{ lineNumbers: "on", minimap: { enabled: false } }}
-    />
-    <Button
-      onClick={async () => {
-        if (currentFilePath) {
-          await saveText(currentFilePath, codeLanguage[0] + "\n" + monacoValue, filesDirectory);
-        }
-      }}
-    >
-      Speichern
-    </Button>
-    <Button onClick={() => setShowMonaco(false)}>Zurück</Button>
-    <Button onClick={() => {
-      const first = codeLanguage[0];
-      setCodeLanguage((l) => [...l.slice(1), first]);
-    }}>{codeLanguage[0]}</Button>
-  </>
-    
+  if (showMonaco) {
+    return <>
+      <Editor
+        height="80vh"
+        language={codeLanguage[0]}
+        value={monacoValue}
+        onChange={(value: any) => setMonacoValue(value ?? "")}
+        options={{ lineNumbers: "on", minimap: { enabled: false } }}
+      />
+      <Button
+        onClick={async () => {
+          if (currentFilePath) {
+            await saveText(`${currentPage}.${languageEndings[codeLanguage[0]]}`, monacoValue, filesDirectory);
+            console.log(`${currentPage}.${languageEndings[codeLanguage[0]]}`);
+          }
+        }}
+      >
+        Speichern
+      </Button>
+      <Button onClick={() => setShowMonaco(false)}>Zurück</Button>
+      <Button onClick={async () => {
+        const oldLang = codeLanguage[0];
+        const newLangArr = [...codeLanguage.slice(1), oldLang];
+        const newLang = newLangArr[0];
+        await deleteFile(`${currentPage}.${languageEndings[oldLang]}`, filesDirectory)
+          .then(() => {
+            setCodeLanguage(newLangArr);
+            saveText(`${currentPage}.${languageEndings[newLang]}`, monacoValue, filesDirectory);
+          })
+          .catch(err => {
+            setCodeLanguage(newLangArr);
+            saveText(`${currentPage}.${languageEndings[newLang]}`, monacoValue, filesDirectory);
+          })
+      }}>{codeLanguage[0]}</Button>
+    </>
+
 
   }
 
@@ -852,9 +870,8 @@ export default function Notebook() {
               actionStack.current.undo();
               autosaveStart();
             }}
-            className={`${
-              actionStack.current.canUndo() ? "text-white" : "text-gray-400"
-            } self-center bg-transparent hover:bg-[#333]`}
+            className={`${actionStack.current.canUndo() ? "text-white" : "text-gray-400"
+              } self-center bg-transparent hover:bg-[#333]`}
           >
             ↶
           </Button>
@@ -864,9 +881,8 @@ export default function Notebook() {
               actionStack.current.redo();
               autosaveStart();
             }}
-            className={`${
-              actionStack.current.canRedo() ? "text-white" : "text-gray-400"
-            } self-center bg-transparent hover:bg-[#333]`}
+            className={`${actionStack.current.canRedo() ? "text-white" : "text-gray-400"
+              } self-center bg-transparent hover:bg-[#333]`}
           >
             ↷
           </Button>
@@ -883,16 +899,15 @@ export default function Notebook() {
                     handleButtonClick(
                       "pencil",
                       () =>
-                        (selectedTool.current =
-                          selectedTool.current == "pen" ? "scroll" : "pen")
+                      (selectedTool.current =
+                        selectedTool.current == "pen" ? "scroll" : "pen")
                     )
                   }
                   className={getButtonClasses(
                     "pencil",
-                    `${
-                      selectedTool.current == "pen"
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "text-gray-400 hover:text-white hover:bg-[#333]"
+                    `${selectedTool.current == "pen"
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "text-gray-400 hover:text-white hover:bg-[#333]"
                     }`
                   )}
                 >
@@ -915,18 +930,17 @@ export default function Notebook() {
                     handleButtonClick(
                       "eraser",
                       () =>
-                        (selectedTool.current =
-                          selectedTool.current == "eraser"
-                            ? "scroll"
-                            : "eraser")
+                      (selectedTool.current =
+                        selectedTool.current == "eraser"
+                          ? "scroll"
+                          : "eraser")
                     )
                   }
                   className={getButtonClasses(
                     "eraser",
-                    `${
-                      selectedTool.current == "eraser"
-                        ? "bg-red-600 text-white hover:bg-red-700"
-                        : "text-gray-400 hover:text-white hover:bg-[#333]"
+                    `${selectedTool.current == "eraser"
+                      ? "bg-red-600 text-white hover:bg-red-700"
+                      : "text-gray-400 hover:text-white hover:bg-[#333]"
                     }`
                   )}
                 >
@@ -939,35 +953,41 @@ export default function Notebook() {
             </Tooltip>
           </TooltipProvider>
         </div>
-              <Button
-        onClick={async () => {
-          // Beispiel: Dateiname dynamisch setzen (hier: aktuelle Seite + ".txt")
-          const filePath = currentPage ? `${currentPage}.txt` : "untitled.txt";
-          try {
-            const content = await loadText(filePath, filesDirectory);
-            const lang = content.split("\n").slice(0,1).join("\n");
-            console.log(lang);
-            console.log(content, "hello");
-            if (codeLanguage.includes(lang)){
-              const index = codeLanguage.indexOf(lang);
-              const before = codeLanguage.slice(0, index-1);
-              const after = codeLanguage.slice(index);
-              setCodeLanguage((l) => [...after, lang, ...before]);
-              console.log(":+1");
-            }
-            setMonacoValue(content.split("\n").slice(1).join("\n") ?? "");
-            setCurrentFilePath(filePath);
-            setShowMonaco(true);
-          } catch (e) {
-            // Datei existiert noch nicht → leeren Editor öffnen
-            setMonacoValue("");
-            setCurrentFilePath(filePath);
-            setShowMonaco(true);
-          }
-        }}
-      >
-        Datei im Editor öffnen
-      </Button>
+        <Button
+          onClick={async () => {
+            // Beispiel: Dateiname dynamisch setzen (hier: aktuelle Seite + ".txt")
+            const ending = Object.values(languageEndings);
+            let filePath: string = "";
+            ending.forEach(async value => {
+              filePath = currentPage ? `${currentPage}.${value}` : "untitled.txt";
+              const lang: string | undefined = undefined
+              try {
+                const content = await loadText(filePath, filesDirectory);
+                for (let i in languageEndings) {
+                  if (languageEndings[i] == value) {
+                    const lang = languageEndings[i];
+                  }
+                }
+                if (lang) {
+                  const index = codeLanguage.indexOf(lang);
+                  const before = codeLanguage.slice(0, index - 1);
+                  const after = codeLanguage.slice(index);
+                  setCodeLanguage((l) => [...after, lang, ...before]);
+                }
+                setMonacoValue(content);
+                setCurrentFilePath(filePath);
+                setShowMonaco(true);
+              } catch (e) {
+                // Datei existiert noch nicht → leeren Editor öffnen
+                setMonacoValue("");
+                setCurrentFilePath(filePath);
+                setShowMonaco(true);
+              }
+            })
+          }}
+        >
+          Datei im Editor öffnen
+        </Button>
 
         <div className="flex items-center h-full gap-2 align-middle mr-0">
           {/* Add Page Dropdown */}
