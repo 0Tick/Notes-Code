@@ -39,8 +39,6 @@ export function useFilesystem() {
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
   const [strokeColor, setStrokeColor] = useState<string>("#000000");
   const [erasing, setErasing] = useState<boolean>(false);
-  // State to trigger a reload of the currently active pages
-  const [toReloadPages, setToReloadPages] = useState<boolean>(false);
 
   // State for the top-level directory handle selected by the user
   const [topDirectoryHandle, setTopDirectoryHandle] = useState<
@@ -355,7 +353,6 @@ export function useFilesystem() {
         lastActivePage: currentPage,
         pages: notebookConfig.pages,
       });
-      setToReloadPages(true);
     }
   }, [currentPage]);
 
@@ -926,11 +923,10 @@ export function useFilesystem() {
           let conf = structuredClone(notebookConfig);
           conf.pages = newPgs;
           setNotebookConfig(conf);
-          setToReloadPages(true);
           return Promise.resolve(id);
         });
     },
-    [pagesDirectory, notebookConfig, currentPage, pages, setToReloadPages]
+    [pagesDirectory, notebookConfig, currentPage, pages]
   );
 
   // Deletes a page from the notebook and updates the page linkage
@@ -1006,7 +1002,7 @@ export function useFilesystem() {
         return Promise.resolve();
       });
     },
-    [notebookConfig, pagesDirectory, currentPage, pages, setToReloadPages]
+    [notebookConfig, pagesDirectory, currentPage, pages]
   );
 
   // Unloads the current notebook, saving pages and config
@@ -1042,19 +1038,6 @@ export function useFilesystem() {
       setToLoadNotebook(null);
     }
   }, [toLoadNotebook, openBook]);
-  // Effect to reload pages when toReloadPages state is true
-  useEffect(() => {
-    if (toReloadPages === true && reloadPages !== undefined) {
-      reloadPages()
-        .then(() => {
-          setToReloadPages(false);
-        })
-        .catch((e) => {
-          console.error(e.message, e.stack);
-          setToReloadPages(true);
-        });
-    }
-  }, [toReloadPages, reloadPages, notebookConfig]);
 
   // Gets all page IDs in their correct order
   const getPagesInOrder = useCallback(() => {
@@ -1218,48 +1201,52 @@ export function useFilesystem() {
     [filesDirectory]
   );
 
-const deleteFile = useCallback(
-  async (filename: string, txtDirHandle?: FileSystemDirectoryHandle) => {
-    if (txtDirHandle === undefined) txtDirHandle = filesDirectory;
-    if (!txtDirHandle) {
-      return Promise.reject("Files directory not set");
-    }
-    try {
-      await txtDirHandle.removeEntry(filename);
-      // Optional: ggf. aus dem Cache entfernen!
-      setTextCache((oldCache) => {
-        const newCache = new Map(oldCache);
-        newCache.delete(filename);
-        return newCache;
-      });
-      return Promise.resolve();
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  },
-  [filesDirectory, setTextCache]
-);
+  const deleteFile = useCallback(
+    async (filename: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) txtDirHandle = filesDirectory;
+      if (!txtDirHandle) {
+        return Promise.reject("Files directory not set");
+      }
+      try {
+        await txtDirHandle.removeEntry(filename);
+        // Optional: ggf. aus dem Cache entfernen!
+        setTextCache((oldCache) => {
+          const newCache = new Map(oldCache);
+          newCache.delete(filename);
+          return newCache;
+        });
+        return Promise.resolve();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+    [filesDirectory, setTextCache]
+  );
 
   // Saves a text/code file to the files directory
   const saveText = useCallback(
-    (path: string, txt: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+    async (
+      path: string,
+      txt: string,
+      txtDirHandle?: FileSystemDirectoryHandle
+    ) => {
       if (txtDirHandle === undefined) {
         txtDirHandle = filesDirectory;
       }
       if (txtDirHandle === undefined) {
         return Promise.reject("No files directory set");
       }
-      return txtDirHandle
-        .getFileHandle(path, { create: true })
-        .then((txtHandle) => {
-          return txtHandle.createWritable({
-            keepExistingData: false,
-          });
-        })
-        .then((writable) => {
-          writable.write(txt);
-          return writable.close();
-        });
+      let txtHandle = await txtDirHandle.getFileHandle(path, { create: true });
+      let writable = await txtHandle.createWritable({
+        keepExistingData: false,
+      });
+      writable.write(txt);
+      setTextCache((oldCache) => {
+        let newCache = new Map(oldCache);
+        newCache.set(path, txt);
+        return newCache;
+      });
+      return writable.close();
     },
     [filesDirectory]
   );
@@ -1316,7 +1303,6 @@ const deleteFile = useCallback(
     currentPageRef,
     deletePage,
     getPagesInOrder,
-    setToReloadPages,
     unloadNotebook,
     showCanvasEditor,
     setShowCanvasEditor,
@@ -1338,5 +1324,6 @@ const deleteFile = useCallback(
     setRedrawAllPages,
     redrawPage,
     setRedrawPage,
+    textCache,
   };
 }
