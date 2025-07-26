@@ -482,8 +482,8 @@ export default function Notebook() {
   const getButtonClasses = (buttonId: string, baseClasses: string) => {
     const isClicked = clickedButton === buttonId;
     return `${baseClasses} transition-all duration-200 ${isClicked
-        ? "scale-110 bg-blue-500 text-white shadow-lg shadow-blue-500/50"
-        : ""
+      ? "scale-110 bg-blue-500 text-white shadow-lg shadow-blue-500/50"
+      : ""
       }`;
   };
 
@@ -573,6 +573,12 @@ export default function Notebook() {
           variant: "destructive",
         });
       }
+      Object.values(languageEndings).forEach(async value => {
+        try {
+          await deleteFile(`${currentPage}.${value}`);
+        }
+        catch (err) { }
+      })
     }
   }, [currentPage]);
   const clearPageHandler = () => {
@@ -785,13 +791,15 @@ export default function Notebook() {
         onClick={async () => {
           if (currentFilePath) {
             await saveText(`${currentPage}.${languageEndings[codeLanguage[0]]}`, monacoValue, filesDirectory);
-            console.log(`${currentPage}.${languageEndings[codeLanguage[0]]}`);
           }
         }}
       >
         Speichern
       </Button>
-      <Button onClick={() => setShowMonaco(false)}>Zurück</Button>
+      <Button onClick={() => {
+        setShowMonaco(false);
+        setCodeLanguage(() => Object.keys(languageEndings));
+      }}>Zurück</Button>
       <Button onClick={async () => {
         const oldLang = codeLanguage[0];
         const newLangArr = [...codeLanguage.slice(1), oldLang];
@@ -960,19 +968,20 @@ export default function Notebook() {
             let filePath: string = "";
             ending.forEach(async value => {
               filePath = currentPage ? `${currentPage}.${value}` : "untitled.txt";
-              const lang: string | undefined = undefined
+              let lang: string | undefined = undefined
               try {
                 const content = await loadText(filePath, filesDirectory);
                 for (let i in languageEndings) {
                   if (languageEndings[i] == value) {
-                    const lang = languageEndings[i];
+                    lang = i;
+                    break;
                   }
                 }
                 if (lang) {
                   const index = codeLanguage.indexOf(lang);
-                  const before = codeLanguage.slice(0, index - 1);
+                  const before = codeLanguage.slice(0, index);
                   const after = codeLanguage.slice(index);
-                  setCodeLanguage((l) => [...after, lang, ...before]);
+                  setCodeLanguage((l) => [...after, ...before]);
                 }
                 setMonacoValue(content);
                 setCurrentFilePath(filePath);
