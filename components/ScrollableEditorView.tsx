@@ -41,6 +41,7 @@ import { Slider } from "./ui/slider";
 import { FileDropZone } from "./invisibleDropper";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -55,6 +56,14 @@ import { Editor, loader } from "@monaco-editor/react";
 import { shikiToMonaco } from "@shikijs/monaco";
 import type { BundledTheme, Highlighter } from "shiki";
 import { languageMap } from "../lib/languages";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
 
 // --- Notebook Component ---
@@ -1217,51 +1226,185 @@ export default function Notebook() {
           </Dialog>
           <div className="flex items-center h-full gap-2 align-middle mr-0">
             {/* Add Page Dropdown */}
-            <DropdownMenu
-              open={isDropdownOpen}
-              onOpenChange={setIsDropdownOpen}
-            >
-              <DropdownMenuTrigger asChild>
-                <Button
-                  ref={addPageBtnRef}
-                  variant="ghost"
-                  size="sm"
-                  className={getButtonClasses(
-                    "addPage",
-                    "text-gray-400 hover:text-white hover:bg-[#333]"
-                  )}
-                  onClick={() => handleButtonClick("addPage")}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-[#333] border-[#444] text-white">
-                <DropdownMenuItem
-                  onClick={addFirstHandler}
-                  className="hover:bg-[#444] cursor-pointer"
-                >
-                  Add as First
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={addLastHandler}
-                  className="hover:bg-[#444] cursor-pointer"
-                >
-                  Add as Last
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={addAfterHandler}
-                  className="hover:bg-[#444] cursor-pointer"
-                >
-                  Add After Current
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={addBeforeHandler}
-                  className="hover:bg-[#444] cursor-pointer"
-                >
-                  Add Before Current
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center h-full gap-2 align-middle mr-0">
+              <Dialog
+                open={showNewPageModal}
+                onOpenChange={setShowNewPageModal}
+              >
+                <DialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={getButtonClasses(
+                      "addPage",
+                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                    onClick={() => handleButtonClick("addPage")}
+                    disabled={!notebookConfig}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#222] border-[#333] text-white">
+                  <DialogHeader>
+                    <DialogTitle>Create a new page</DialogTitle>
+                    <DialogDescription className="text-gray-400">
+                      Choose the dimensions and orientation for your new page.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4 space-y-4">
+                    <div className="flex items-center gap-4">
+                      <Label htmlFor="page-preset" className="text-right">
+                        Preset
+                      </Label>
+                      <Select
+                        onValueChange={(value) => {
+                          if (value === "a4") {
+                            setNewPageWidth("815");
+                            setNewPageHeight("1152");
+                          } else if (value === "letter") {
+                            setNewPageWidth("816");
+                            setNewPageHeight("1056");
+                          } else if (value === "a3") {
+                            setNewPageWidth("1152");
+                            setNewPageHeight("1630");
+                          } else if (value === "a5") {
+                            setNewPageWidth("576");
+                            setNewPageHeight("815");
+                          }
+                          setPageOrientation("portrait");
+                        }}
+                        defaultValue="a4"
+                      >
+                        <SelectTrigger className="w-[180px] bg-[#333] border-[#444]">
+                          <SelectValue placeholder="Select a preset" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#333] border-[#444] text-white">
+                          <SelectItem value="a3">A3</SelectItem>
+                          <SelectItem value="a4">A4</SelectItem>
+                          <SelectItem value="a5">A5</SelectItem>
+                          <SelectItem value="letter">Letter</SelectItem>
+                          <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="width">Width (px)</Label>
+                        <Input
+                          id="width"
+                          value={newPageWidth}
+                          onChange={(e) => setNewPageWidth(e.target.value)}
+                          className="bg-[#333] border-[#444] text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="height">Height (px)</Label>
+                        <Input
+                          id="height"
+                          value={newPageHeight}
+                          onChange={(e) => setNewPageHeight(e.target.value)}
+                          className="bg-[#333] border-[#444] text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Orientation</Label>
+                      <RadioGroup
+                        className="flex gap-4 mt-2"
+                        onValueChange={(value: "portrait" | "landscape") => {
+                          if (
+                            pageOrientation === "portrait" &&
+                            value === "landscape"
+                          ) {
+                            setNewPageWidth(newPageHeight);
+                            setNewPageHeight(newPageWidth);
+                          } else if (
+                            pageOrientation === "landscape" &&
+                            value === "portrait"
+                          ) {
+                            setNewPageWidth(newPageHeight);
+                            setNewPageHeight(newPageWidth);
+                          }
+                          setPageOrientation(value);
+                        }}
+                        value={pageOrientation}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="portrait" id="r1" />
+                          <Label htmlFor="r1">Portrait</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="landscape" id="r2" />
+                          <Label htmlFor="r2">Landscape</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div>
+                      <Label>Insert Position</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button className="w-full mt-2 bg-[#333] text-white hover:bg-[#444]">
+                            {{
+                              first: "Position: First",
+                              last: "Position: Last",
+                              before: "Position: Before Current",
+                              after: "Position: After Current",
+                            }[newPageTitle] || "Select Position"}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-full bg-[#333] border-[#444] text-white">
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("first")}
+                          >
+                            First
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("last")}
+                          >
+                            Last
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("before")}
+                          >
+                            Before Current
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("after")}
+                          >
+                            After Current
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button
+                        variant="outline"
+                        className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white"
+                      >
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button
+                      className="bg-white text-black hover:bg-gray-200"
+                      onClick={createNewPage}
+                      disabled={
+                        !["first", "last", "before", "after"].includes(
+                          newPageTitle
+                        )
+                      }
+                    >
+                      Create
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
             <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
             {/* Stroke Size Selector */}
             {strokeSizes.map((size, i) => {
