@@ -1130,6 +1130,30 @@ export default function Notebook() {
 
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-gray-300">
+                  Existing Files on this Page
+                </h3>
+                <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
+                  {currentPage &&
+                  (pages.get(currentPage)?.textBlocks.length || 0) > 0 ? (
+                    pages.get(currentPage)?.textBlocks.map((block) => (
+                      <Button
+                        key={block.path}
+                        variant="outline"
+                        className="justify-start bg-transparent border-[#444] hover:bg-[#333]"
+                        onClick={() => handleFileSelect(block.path as string)}
+                      >
+                        {block.path}
+                      </Button>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500 italic p-2">
+                      No code files on this page yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-300">
                   Existing Files in this Notebook
                 </h3>
                 <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
@@ -1158,30 +1182,6 @@ export default function Notebook() {
                         No code files on this page yet.
                       </p>
                     ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-gray-300">
-                  Existing Files on this Page
-                </h3>
-                <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
-                  {currentPage &&
-                  (pages.get(currentPage)?.textBlocks.length || 0) > 0 ? (
-                    pages.get(currentPage)?.textBlocks.map((block) => (
-                      <Button
-                        key={block.path}
-                        variant="outline"
-                        className="justify-start bg-transparent border-[#444] hover:bg-[#333]"
-                        onClick={() => handleFileSelect(block.path as string)}
-                      >
-                        {block.path}
-                      </Button>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500 italic p-2">
-                      No code files on this page yet.
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -1603,38 +1603,49 @@ export default function Notebook() {
       <div className={!showMonaco ? "hidden" : ""}>
         {/* Conditionally render the Editor OR a loading state */}
         {isEditorReady ? (
-          <div>
-            <Editor
-              height="80vh"
-              // Add defaultTheme to prevent flashes/errors on initial load
-              language={language}
-              value={monacoValue}
-              onChange={(value: any) => setMonacoValue(value ?? "")}
-              // We no longer need beforeMount for this task
-              // beforeMount={(monaco: any) => { setupMonaco(monaco); }}
-              options={{
-                lineNumbers: "on",
-                minimap: { enabled: true },
-                theme: "github-dark", // This will be applied correctly now
-              }}
-            />
-            <Button
-              onClick={async () => {
-                if (currentFilePath) {
-                  await saveText(currentFilePath, monacoValue, filesDirectory);
-                }
-              }}
-            >
-              Speichern
-            </Button>
-            <Button
-              onClick={() => {
-                setShowMonaco(false);
-              }}
-            >
-              Zurück
-            </Button>
-            <Button>{language}</Button>
+          <div className="flex flex-col h-screen">
+            <div className="flex flex-row items-center gap-2 bg-[#222] px-4 py-2 border-b border-[#333]">
+              <Button
+                onClick={async () => {
+                  if (currentFilePath) {
+                    await saveText(
+                      currentFilePath,
+                      monacoValue,
+                      filesDirectory
+                    );
+                  }
+                }}
+              >
+                Speichern
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowMonaco(false);
+                }}
+              >
+                Zurück
+              </Button>
+              <Button
+                disabled
+                className="bg-transparent text-gray-400 cursor-default"
+              >
+                {language}
+              </Button>
+            </div>
+            <div className="flex-1">
+              <Editor
+                height="100%"
+                language={language}
+                value={monacoValue}
+                onChange={(value: any) => setMonacoValue(value ?? "")}
+                options={{
+                  lineNumbers: "on",
+                  minimap: { enabled: true },
+                  theme: "github-dark",
+                  wordWrap: "on",
+                }}
+              />
+            </div>
           </div>
         ) : (
           // Show a loading indicator while the one-time setup runs
