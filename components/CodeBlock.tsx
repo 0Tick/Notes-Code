@@ -8,7 +8,7 @@ interface CodeBlockProps {
   theme: string;
 }
 
-export default function CodeBlock({textBlock, theme}: CodeBlockProps) {
+export default function CodeBlock({ textBlock, theme }: CodeBlockProps) {
   const { loadText, textCache, getHighlighter } = useFilesystemContext();
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
   const language = (textBlock.path && textBlock.path.split(".").pop()) || "txt";
@@ -36,8 +36,15 @@ export default function CodeBlock({textBlock, theme}: CodeBlockProps) {
     })();
   }, [highlighter, code]);
   if (!textBlock.path) return <div>Code Block has no filepath</div>;
+  console.log(`translate(${textBlock.x}px, ${textBlock.y}px)`);
   return (
-    <div className="absolute top-0 left-0 h-full w-full pointer-events-none select-none"
+    <div
+      className="absolute h-full w-full pointer-events-none select-none"
+      style={{
+        "--code-block-width": textBlock.w + "px",
+        top: textBlock.y + "px",
+        left: textBlock.x + "px",
+      }}
       dangerouslySetInnerHTML={{
         __html: html,
       }}
