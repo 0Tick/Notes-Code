@@ -37,7 +37,7 @@ export default function CodeBlock({textBlock, theme}: CodeBlockProps) {
   }, [highlighter, code]);
   if (!textBlock.path) return <div>Code Block has no filepath</div>;
   return (
-    <div className="absolute top-0 left-0 w-full h-full pointer-events-none"
+    <div className="absolute top-0 left-0 h-full w-full pointer-events-none select-none"
       dangerouslySetInnerHTML={{
         __html: html,
       }}
