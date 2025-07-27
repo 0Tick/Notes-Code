@@ -117,7 +117,6 @@ export const Page: FC<PageProps> = ({
           .requestPresenter({ presentationArea: canvasref.current })
           .then((p: any) => {
             presenterRef.current = p;
-            console.log(p);
           });
       }
       currentPageRef.current = pageID;

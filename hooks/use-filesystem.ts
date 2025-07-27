@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { errorToast } from "./use-toast";
+import { errorToast, toast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
-import { getHighlighter } from "@/lib/highlighter";
+import { shikiToMonaco } from "@shikijs/monaco";
+import { bundledLanguages, bundledThemes, createHighlighter, Highlighter } from "shiki";
 
 // Declaration for the experimental showDirectoryPicker API
 declare const showDirectoryPicker: (
@@ -14,6 +15,7 @@ function isNotebook(handle: FileSystemDirectoryHandle): boolean {
   return handle.name.endsWith(".ncnb");
 }
 
+let alreadySetup = false;
 //TODO Rewrite to use proper functional design patterns
 // Custom hook for managing filesystem interactions and state
 export function useFilesystem() {
@@ -39,7 +41,11 @@ export function useFilesystem() {
       try {
         await getHighlighter();
       } catch (error) {
-        errorToast("Failed to initialize highlighter: " + error.message);
+        toast({
+          title: "Failed to initialize highlighter",
+          description: "Failed to initialize highlighter: " + (error as {message:string}).message,
+          variant: "destructive",
+        })
       }
     })();
   }, []);
@@ -345,6 +351,22 @@ export function useFilesystem() {
     [directoryHandle]
   );
 
+  const [availableTextFiles, setAvailableTextFiles] = useState<string[]>([]);
+  useEffect(() => {
+    if (filesDirectory === undefined) return;
+    (async ()=>{
+      setAvailableTextFiles([]);
+      //@ts-expect-error
+      for await (const [key,value] of filesDirectory.entries() as Iterable<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>){
+        if (value){
+          if (value.kind === "file"){
+            setAvailableTextFiles((files) => [...files, value.name]);
+          }
+        }
+      }
+    })() 
+  },[filesDirectory])
+
   // State for the currently loaded pages of the notebook
   const [pages, setPages] = useState<Map<string, NotesCode.Document>>(
     new Map<string, NotesCode.Document>()
@@ -361,6 +383,7 @@ export function useFilesystem() {
         lastActivePage: currentPage,
         pages: notebookConfig.pages,
       });
+      reloadPages();
     }
   }, [currentPage]);
 
@@ -1262,6 +1285,23 @@ export function useFilesystem() {
     [filesDirectory]
   );
 
+  const highlighter = useRef<Highlighter | null>(null);
+  async function getHighlighter() {
+  if (highlighter.current == null) {
+    let themes = Object.keys(bundledThemes);
+    highlighter.current = await createHighlighter({
+      themes: themes,
+      langs: Object.keys(bundledLanguages),
+    });
+    let theme = highlighter.current.getTheme("github-light");
+    let newTheme = { ...theme, name: "light" };
+    highlighter.current.loadTheme(newTheme);
+    return highlighter.current;
+  } else {
+    return highlighter.current;
+  }
+}
+
   const selectedTool = useRef("pen");
   const currentPageRef = useRef<string | null>(null);
   const pointerDownRef = useRef<boolean>(false);
@@ -1336,5 +1376,7 @@ export function useFilesystem() {
     redrawPage,
     setRedrawPage,
     textCache,
+    availableTextFiles,
+    getHighlighter,
   };
 }

@@ -51,12 +51,14 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Page, DelegatedInkTrailPresenter } from "./pageComponent";
-import { Editor } from "@monaco-editor/react";
-import { setupMonaco } from "@/lib/highlighter";
-import { languageMap } from "@/lib/languages";
+import { Editor, loader } from "@monaco-editor/react";
+import { shikiToMonaco } from "@shikijs/monaco";
+import type { BundledTheme, Highlighter } from "shiki";
+import { languageMap } from "../lib/languages";
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
 
 // --- Notebook Component ---
+let isMonacoConfigured = false;
 
 export default function Notebook() {
   const PAGE_W = 800;
@@ -91,6 +93,8 @@ export default function Notebook() {
     saveText,
     filesDirectory,
     deleteFile,
+    availableTextFiles,
+    getHighlighter,
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
   const [showNewPageModal, setShowNewPageModal] = useState(false);
@@ -107,6 +111,7 @@ export default function Notebook() {
       setPage: setPage,
     })
   );
+  const [isEditorReady, setIsEditorReady] = useState(false);
 
   const drawing = useRef(false);
   const presenter = useRef<DelegatedInkTrailPresenter | null>(null);
@@ -140,6 +145,48 @@ export default function Notebook() {
     actionStack.current.state.currentPage = currentPage;
     actionStack.current.state.setPage = setPage;
   }, [pages, currentPage, setPage]);
+  useEffect(() => {
+    // If we've already configured monaco, we're ready to render.
+    if (isMonacoConfigured) {
+      setIsEditorReady(true);
+      return;
+    }
+
+    // This function will run only once for the entire app lifecycle.
+    const configureMonaco = async () => {
+      try {
+        // 1. Get the highlighter instance. We load our desired dark theme
+        //    AND a fallback light theme (e.g., 'min-light') to use as a base.
+        const highlighter = await getHighlighter();
+
+        // 2. THE CRITICAL FIX:
+        //    Get the theme data for a real light theme.
+        const lightTheme = await highlighter.getTheme(
+          "github-dark" as BundledTheme
+        );
+
+        //    Create a new theme object that is a copy, but with the name 'light'.
+        const dummyLightTheme = { ...lightTheme, name: "light" };
+
+        //    Load this new 'light' theme into the highlighter instance.
+        await highlighter.loadTheme(dummyLightTheme);
+
+        // 3. Wait for the monaco loader to be ready
+        const monaco = await loader.init();
+
+        // 4. Bridge shiki and monaco. This will now include our dummy 'light' theme.
+        shikiToMonaco(highlighter as Highlighter, monaco);
+
+        // 5. Mark setup as complete and update state to trigger render
+        isMonacoConfigured = true;
+        setIsEditorReady(true);
+      } catch (error) {
+        console.error("Error configuring Monaco with Shiki:", error);
+      }
+    };
+
+    configureMonaco();
+  }, [getHighlighter]);
 
   let [orderedPages, setOrderedPages] = useState<string[]>([]);
 
@@ -501,7 +548,8 @@ export default function Notebook() {
   const createNewPage = useCallback(() => {
     if (newPageTitle) {
       // Validate or assert newPageTitle as PageCreationInsertPosition
-      const insertPosition: PageCreationInsertPosition = newPageTitle as PageCreationInsertPosition;
+      const insertPosition: PageCreationInsertPosition =
+        newPageTitle as PageCreationInsertPosition;
       console.log("Creating new page with insert mode:", insertPosition);
       createPage(undefined, {
         insert: insertPosition,
@@ -757,7 +805,6 @@ export default function Notebook() {
   useEffect(() => {
     if (pages === undefined || pages.size === 0 || notebookConfig === undefined)
       return;
-    console.log("pages:", pages);
     getPagesInOrder()
       .then((pgs) => {
         setOrderedPages(pgs);
@@ -770,37 +817,14 @@ export default function Notebook() {
   }, [currentPage]);
 
   useEffect(() => {
-    console.log(currentFilePath, currentPage, pages);
     if (currentFilePath) {
       let ending = currentFilePath.split(".").pop();
-      if (ending === undefined) {
-        setLanguage("text");
+      if (ending === undefined) return;
+      if (languageMap.has(ending)) {
+        setLanguage(languageMap.get(ending) || "text");
       } else {
-          setLanguage(languageMap.get(ending) || "text");
+        setLanguage("text");
       }
-    }
-    if (
-      currentFilePath &&
-      currentPage &&
-      pages.has(currentPage) &&
-      pages.get(currentPage)?.textBlocks.length === 0
-    ) {
-      let page = structuredClone(pages.get(currentPage));
-      if (page === undefined) return;
-      page.textBlocks = [
-        {
-          path: currentFilePath,
-          x: 0,
-          y: 0,
-          w: 0,
-          h: 0,
-          fontSize: 20,
-          fontFamily: "monospace",
-          color: "black",
-          contentType: 3,
-        },
-      ];
-      setPage(page, currentPage);
     }
   }, [currentFilePath]);
 
@@ -870,25 +894,7 @@ export default function Notebook() {
     try {
       // Create an empty file
       await saveText(path, "", filesDirectory);
-
-      // Add text block to the current page
-      const page = pages.get(currentPage);
-      if (!page) throw new Error("Current page data not found.");
-
-      const newPage = structuredClone(page);
-      newPage.textBlocks.push({
-        path: path,
-        x: 50, // Some default position
-        y: 50,
-        w: 500, // Some default size
-        h: 400,
-        fontSize: 14,
-        fontFamily: "monospace",
-        color: "black",
-        contentType: 3,
-      });
-      await setPage(newPage, currentPage);
-
+      await addCodeFileAsBlock(path);
       // Switch to Monaco editor
       setMonacoValue("");
       setCurrentFilePath(path);
@@ -909,6 +915,30 @@ export default function Notebook() {
       });
     }
   };
+
+  const addCodeFileAsBlock = useCallback(
+    async (path: string) => {
+      // Add text block to the current page
+      if (!currentPage) return;
+      const page = pages.get(currentPage);
+      if (!page) throw new Error("Current page data not found.");
+
+      const newPage = structuredClone(page);
+      newPage.textBlocks.push({
+        path: path,
+        x: 50, // Some default position
+        y: 50,
+        w: 500, // Some default size
+        h: 400,
+        fontSize: 14,
+        fontFamily: "monospace",
+        color: "black",
+        contentType: 3,
+      });
+      await setPage(newPage, currentPage);
+    },
+    [currentPage, pages, setPage]
+  );
 
   if (pages === undefined || (currentPage !== undefined && pages.size === 0)) {
     return (
@@ -1089,6 +1119,38 @@ export default function Notebook() {
                 </DialogDescription>
               </DialogHeader>
 
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-300">
+                  Existing Files in this Notebook
+                </h3>
+                <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
+                  {currentPage &&
+                    (availableTextFiles && availableTextFiles.length > 0 ? (
+                      availableTextFiles.map((path) => (
+                        <Button
+                          key={path}
+                          variant="outline"
+                          className="justify-start bg-transparent border-[#444] hover:bg-[#333]"
+                          onClick={() => {
+                            let exists = pages
+                              .get(currentPage)
+                              ?.textBlocks.find((block) => block.path === path);
+                            if (!exists) {
+                              addCodeFileAsBlock(path);
+                            }
+                            handleFileSelect(path);
+                          }}
+                        >
+                          {path}
+                        </Button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 italic p-2">
+                        No code files on this page yet.
+                      </p>
+                    ))}
+                </div>
+              </div>
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-gray-300">
                   Existing Files on this Page
@@ -1394,41 +1456,49 @@ export default function Notebook() {
           </div>
         </FileDropZone>
       </div>
-      {/* Monaco Editor View */}
+      {/* Monaco Editor View - MODIFIED */}
       <div className={!showMonaco ? "hidden" : ""}>
-        <div>
-          <Editor
-            height="80vh"
-            language={language}
-            value={monacoValue}
-            onChange={(value: any) => setMonacoValue(value ?? "")}
-            beforeMount={(monaco: any) => {
-              setupMonaco(monaco);
-            }}
-            options={{
-              lineNumbers: "on",
-              minimap: { enabled: true },
-              theme: "github-dark",
-            }}
-          />
-          <Button
-            onClick={async () => {
-              if (currentFilePath) {
-                await saveText(currentFilePath, monacoValue, filesDirectory);
-              }
-            }}
-          >
-            Speichern
-          </Button>
-          <Button
-            onClick={() => {
-              setShowMonaco(false);
-            }}
-          >
-            Zurück
-          </Button>
-          <Button>{language}</Button>
-        </div>
+        {/* Conditionally render the Editor OR a loading state */}
+        {isEditorReady ? (
+          <div>
+            <Editor
+              height="80vh"
+              // Add defaultTheme to prevent flashes/errors on initial load
+              language={language}
+              value={monacoValue}
+              onChange={(value: any) => setMonacoValue(value ?? "")}
+              // We no longer need beforeMount for this task
+              // beforeMount={(monaco: any) => { setupMonaco(monaco); }}
+              options={{
+                lineNumbers: "on",
+                minimap: { enabled: true },
+                theme: "github-dark", // This will be applied correctly now
+              }}
+            />
+            <Button
+              onClick={async () => {
+                if (currentFilePath) {
+                  await saveText(currentFilePath, monacoValue, filesDirectory);
+                }
+              }}
+            >
+              Speichern
+            </Button>
+            <Button
+              onClick={() => {
+                setShowMonaco(false);
+              }}
+            >
+              Zurück
+            </Button>
+            <Button>{language}</Button>
+          </div>
+        ) : (
+          // Show a loading indicator while the one-time setup runs
+          <div className="flex justify-center items-center h-full">
+            <p>Initializing Code Editor...</p>
+          </div>
+        )}
       </div>
     </div>
   );

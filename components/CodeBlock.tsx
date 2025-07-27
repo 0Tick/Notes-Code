@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState } from "react";
-import { getHighlighter } from "@/lib/highlighter";
 import { Highlighter } from "shiki";
 import { useFilesystemContext } from "@/components/filesystem-provider";
 import { NotesCode } from "@/handwriting";
@@ -10,18 +9,17 @@ interface CodeBlockProps {
 }
 
 export default function CodeBlock({textBlock, theme}: CodeBlockProps) {
-  const { loadText, textCache } = useFilesystemContext();
+  const { loadText, textCache, getHighlighter } = useFilesystemContext();
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
   const language = (textBlock.path && textBlock.path.split(".").pop()) || "txt";
   const [code, setCode] = useState("");
 
   useEffect(() => {
     getHighlighter().then((h) => {
-      setHighlighter(h);
+      setHighlighter(h as Highlighter);
     });
   }, []);
   useEffect(() => {
-    console.log("text cache changed:", textCache)
     if (textBlock.path && textCache.has(textBlock.path)) {
       setCode(textCache.get(textBlock.path) as string);
     }
