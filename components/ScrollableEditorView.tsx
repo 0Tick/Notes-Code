@@ -64,6 +64,8 @@ import {
   SelectValue,
 } from "./ui/select";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+
+
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
 
 // --- Notebook Component ---
@@ -140,6 +142,10 @@ export default function Notebook() {
   const [language, setLanguage] = useState<string>("text");
   const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
+
+  const lastDistanceRef = useRef<number | null>(null);
+  // Referenz für das Zoom-Target (z.B. den Notebookwrapper)
+  const zoomDivRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setStyle((s) => ({
@@ -553,11 +559,10 @@ export default function Notebook() {
   // Get button classes with animation
   const getButtonClasses = (buttonId: string, baseClasses: string) => {
     const isClicked = clickedButton === buttonId;
-    return `${baseClasses} transition-all duration-200 ${
-      isClicked
+    return `${baseClasses} transition-all duration-200 ${isClicked
         ? "scale-110 bg-blue-500 text-white shadow-lg shadow-blue-500/50"
         : ""
-    }`;
+      }`;
   };
 
   const createNewPage = useCallback(() => {
@@ -955,6 +960,56 @@ export default function Notebook() {
     [currentPage, pages, setPage]
   );
 
+  function getDistance(touches: TouchList) {
+    const [touch1, touch2] = [touches[0], touches[1]];
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function handleTouchStart(e: TouchEvent) {
+    if (e.touches.length === 2) {
+      lastDistanceRef.current = getDistance(e.touches);
+    }
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    if (e.touches.length === 2) {
+      const newDistance = getDistance(e.touches);
+      const oldDistance = lastDistanceRef.current;
+      if (oldDistance && oldDistance !== 0) {
+        const zoomFactor = newDistance / oldDistance;
+        setScale(prev => {
+          const next = Math.min(Math.max(prev * zoomFactor, 0.5), 4);
+          return next;
+        });
+        lastDistanceRef.current = newDistance;
+      }
+      e.preventDefault();
+    }
+  }
+
+  function handleTouchEnd() {
+    lastDistanceRef.current = null;
+  }
+
+  useEffect(() => {
+    const el = zoomDivRef.current;
+    if (!el) return;
+
+    // Native EventListener, damit passive: false funktioniert!
+    el.addEventListener("touchstart", handleTouchStart, { passive: false });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: false });
+
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [zoomDivRef.current]);
+
+
   if (pages === undefined || (currentPage !== undefined && pages.size === 0)) {
     return (
       <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
@@ -1016,9 +1071,8 @@ export default function Notebook() {
                 actionStack.current.undo();
                 autosaveStart();
               }}
-              className={`${
-                actionStack.current.canUndo() ? "text-white" : "text-gray-400"
-              } self-center bg-transparent hover:bg-[#333]`}
+              className={`${actionStack.current.canUndo() ? "text-white" : "text-gray-400"
+                } self-center bg-transparent hover:bg-[#333]`}
             >
               ↶
             </Button>
@@ -1028,9 +1082,8 @@ export default function Notebook() {
                 actionStack.current.redo();
                 autosaveStart();
               }}
-              className={`${
-                actionStack.current.canRedo() ? "text-white" : "text-gray-400"
-              } self-center bg-transparent hover:bg-[#333]`}
+              className={`${actionStack.current.canRedo() ? "text-white" : "text-gray-400"
+                } self-center bg-transparent hover:bg-[#333]`}
             >
               ↷
             </Button>
@@ -1047,16 +1100,15 @@ export default function Notebook() {
                       handleButtonClick(
                         "pencil",
                         () =>
-                          (selectedTool.current =
-                            selectedTool.current == "pen" ? "scroll" : "pen")
+                        (selectedTool.current =
+                          selectedTool.current == "pen" ? "scroll" : "pen")
                       )
                     }
                     className={getButtonClasses(
                       "pencil",
-                      `${
-                        selectedTool.current == "pen"
-                          ? "bg-blue-600 text-white hover:bg-blue-700"
-                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      `${selectedTool.current == "pen"
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "text-gray-400 hover:text-white hover:bg-[#333]"
                       }`
                     )}
                   >
@@ -1079,18 +1131,17 @@ export default function Notebook() {
                       handleButtonClick(
                         "eraser",
                         () =>
-                          (selectedTool.current =
-                            selectedTool.current == "eraser"
-                              ? "scroll"
-                              : "eraser")
+                        (selectedTool.current =
+                          selectedTool.current == "eraser"
+                            ? "scroll"
+                            : "eraser")
                       )
                     }
                     className={getButtonClasses(
                       "eraser",
-                      `${
-                        selectedTool.current == "eraser"
-                          ? "bg-red-600 text-white hover:bg-red-700"
-                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      `${selectedTool.current == "eraser"
+                        ? "bg-red-600 text-white hover:bg-red-700"
+                        : "text-gray-400 hover:text-white hover:bg-[#333]"
                       }`
                     )}
                   >
@@ -1140,7 +1191,7 @@ export default function Notebook() {
                 </h3>
                 <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
                   {currentPage &&
-                  (pages.get(currentPage)?.textBlocks.length || 0) > 0 ? (
+                    (pages.get(currentPage)?.textBlocks.length || 0) > 0 ? (
                     pages.get(currentPage)?.textBlocks.map((block) => (
                       <Button
                         key={block.path}
@@ -1580,29 +1631,32 @@ export default function Notebook() {
 
         {/* Scrollable notebook */}
         <FileDropZone onFilesDrop={onDrop}>
-          <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
-            <div className="grid justify-items-center py-8">
-              {pages !== undefined &&
-                pages.size > 0 &&
-                orderedPages.map((pageId) => {
-                  let page = pages.get(pageId);
-                  let conf = notebookConfig?.pages.get(pageId);
-                  return (
-                    <Page
-                      key={pageId}
-                      pageID={pageId}
-                      pageWidth={conf?.width || PAGE_W}
-                      pageHeight={conf?.height || PAGE_H}
-                      scale={scale}
-                      onPointerEvent={handlePointerEvent}
-                      presenterRef={presenter}
-                      strokeDiameter={style.diameter}
-                      pageData={page}
-                    />
-                  );
-                })}
-            </div>
-          </div>
+          <div
+            ref={zoomDivRef}
+          >
+            <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
+              <div className="grid justify-items-center py-8">
+                {pages !== undefined &&
+                  pages.size > 0 &&
+                  orderedPages.map((pageId) => {
+                    let page = pages.get(pageId);
+                    let conf = notebookConfig?.pages.get(pageId);
+                    return (
+                      <Page
+                        key={pageId}
+                        pageID={pageId}
+                        pageWidth={conf?.width || PAGE_W}
+                        pageHeight={conf?.height || PAGE_H}
+                        scale={scale}
+                        onPointerEvent={handlePointerEvent}
+                        presenterRef={presenter}
+                        strokeDiameter={style.diameter}
+                        pageData={page}
+                      />
+                    );
+                  })}
+              </div>
+            </div></div>
         </FileDropZone>
       </div>
       {/* Monaco Editor View - MODIFIED */}
