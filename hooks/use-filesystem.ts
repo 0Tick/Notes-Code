@@ -1317,7 +1317,7 @@ export function useFilesystem() {
       clearTimeout(autosaveCurrentTimeout.current);
     }
     autosaveCurrentTimeout.current = setTimeout(() => {
-      savePages(false);
+      savePages(false).catch(()=>{});
       autosaveCurrentTimeout.current = null;
     }, autosaveDuration);
   }, [savePages]);
