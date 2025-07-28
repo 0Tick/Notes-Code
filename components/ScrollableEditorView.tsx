@@ -11,6 +11,7 @@ import { NotesCode } from "@/handwriting";
 import { useFilesystemContext } from "@/components/filesystem-provider";
 import { Action, ActionStack } from "./ActionStack";
 import {
+  Code,
   Eraser,
   Home,
   Pen,
@@ -38,30 +39,35 @@ import { PopoverPicker } from "./popOverPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Slider } from "./ui/slider";
 import { FileDropZone } from "./invisibleDropper";
-import { Page, DelegatedInkTrailPresenter } from "./pageComponent";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Page, DelegatedInkTrailPresenter } from "./pageComponent";
+import { Editor, loader } from "@monaco-editor/react";
+import { shikiToMonaco } from "@shikijs/monaco";
+import type { BundledTheme, Highlighter } from "shiki";
+import { languageMap } from "../lib/languages";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Input } from "./ui/input";
+} from "./ui/select";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 type PageCreationInsertPosition = "first" | "last" | "before" | "after";
 
 // --- Notebook Component ---
+let isMonacoConfigured = false;
 
 export default function Notebook() {
   const PAGE_W = 800;
@@ -92,6 +98,12 @@ export default function Notebook() {
     setRedrawAllPages,
     redrawPage,
     setRedrawPage,
+    loadText,
+    saveText,
+    filesDirectory,
+    deleteFile,
+    availableTextFiles,
+    getHighlighter,
   } = useFilesystemContext();
   const [scale, setScale] = useState(1);
   const [showNewPageModal, setShowNewPageModal] = useState(false);
@@ -108,6 +120,7 @@ export default function Notebook() {
       setPage: setPage,
     })
   );
+  const [isEditorReady, setIsEditorReady] = useState(false);
 
   const drawing = useRef(false);
   const presenter = useRef<DelegatedInkTrailPresenter | null>(null);
@@ -120,6 +133,13 @@ export default function Notebook() {
     diameter: 8,
     backgroundColor: "#222222",
   });
+
+  const [showMonaco, setShowMonaco] = useState(false);
+  const [monacoValue, setMonacoValue] = useState("");
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [language, setLanguage] = useState<string>("text");
+  const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
 
   useEffect(() => {
     setStyle((s) => ({
@@ -134,6 +154,48 @@ export default function Notebook() {
     actionStack.current.state.currentPage = currentPage;
     actionStack.current.state.setPage = setPage;
   }, [pages, currentPage, setPage]);
+  useEffect(() => {
+    // If we've already configured monaco, we're ready to render.
+    if (isMonacoConfigured) {
+      setIsEditorReady(true);
+      return;
+    }
+
+    // This function will run only once for the entire app lifecycle.
+    const configureMonaco = async () => {
+      try {
+        // 1. Get the highlighter instance. We load our desired dark theme
+        //    AND a fallback light theme (e.g., 'min-light') to use as a base.
+        const highlighter = await getHighlighter();
+
+        // 2. THE CRITICAL FIX:
+        //    Get the theme data for a real light theme.
+        const lightTheme = await highlighter.getTheme(
+          "github-dark" as BundledTheme
+        );
+
+        //    Create a new theme object that is a copy, but with the name 'light'.
+        const dummyLightTheme = { ...lightTheme, name: "light" };
+
+        //    Load this new 'light' theme into the highlighter instance.
+        await highlighter.loadTheme(dummyLightTheme);
+
+        // 3. Wait for the monaco loader to be ready
+        const monaco = await loader.init();
+
+        // 4. Bridge shiki and monaco. This will now include our dummy 'light' theme.
+        shikiToMonaco(highlighter as Highlighter, monaco);
+
+        // 5. Mark setup as complete and update state to trigger render
+        isMonacoConfigured = true;
+        setIsEditorReady(true);
+      } catch (error) {
+        console.error("Error configuring Monaco with Shiki:", error);
+      }
+    };
+
+    configureMonaco();
+  }, [getHighlighter]);
 
   let [orderedPages, setOrderedPages] = useState<string[]>([]);
 
@@ -495,7 +557,8 @@ export default function Notebook() {
   const createNewPage = useCallback(() => {
     if (newPageTitle) {
       // Validate or assert newPageTitle as PageCreationInsertPosition
-      const insertPosition: PageCreationInsertPosition = newPageTitle as PageCreationInsertPosition;
+      const insertPosition: PageCreationInsertPosition =
+        newPageTitle as PageCreationInsertPosition;
       console.log("Creating new page with insert mode:", insertPosition);
       createPage(undefined, {
         insert: insertPosition,
@@ -762,6 +825,18 @@ export default function Notebook() {
     console.log("Current page:", currentPage);
   }, [currentPage]);
 
+  useEffect(() => {
+    if (currentFilePath) {
+      let ending = currentFilePath.split(".").pop();
+      if (ending === undefined) return;
+      if (languageMap.has(ending)) {
+        setLanguage(languageMap.get(ending) || "text");
+      } else {
+        setLanguage("text");
+      }
+    }
+  }, [currentFilePath]);
+
   function updateStrokeSize(newSize: number) {
     const newStrokeSizes = [...strokeSizes];
     // Update the size at the currently active index
@@ -793,9 +868,87 @@ export default function Notebook() {
     }));
   }
 
-  if (!!!showCanvasEditor) {
-    return <></>;
-  }
+  const handleFileSelect = async (path: string) => {
+    if (!filesDirectory) return;
+    try {
+      const text = await loadText(path, filesDirectory);
+      setMonacoValue(text ?? "");
+      setCurrentFilePath(path);
+      setShowMonaco(true);
+      setIsFileDialogOpen(false);
+    } catch (e) {
+      console.error("Failed to load file:", e);
+      toast({
+        title: "Error",
+        description: "Could not load the selected file.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateAndOpenFile = async () => {
+    if (!newFileName || !filesDirectory || !currentPage) return;
+    // Basic validation
+    if (!newFileName.trim()) {
+      toast({
+        title: "Error",
+        description: "File name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const path = newFileName.trim();
+
+    try {
+      // Create an empty file
+      await saveText(path, "", filesDirectory);
+      await addCodeFileAsBlock(path);
+      // Switch to Monaco editor
+      setMonacoValue("");
+      setCurrentFilePath(path);
+      setShowMonaco(true);
+      setIsFileDialogOpen(false);
+      setNewFileName(""); // Reset input
+
+      toast({
+        title: "File Created",
+        description: `Successfully created and opened ${path}.`,
+      });
+    } catch (e) {
+      console.error("Failed to create file:", e);
+      toast({
+        title: "Error",
+        description: "Could not create the new file.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const addCodeFileAsBlock = useCallback(
+    async (path: string) => {
+      // Add text block to the current page
+      if (!currentPage) return;
+      const page = pages.get(currentPage);
+      if (!page) throw new Error("Current page data not found.");
+
+      const newPage = structuredClone(page);
+      newPage.textBlocks.push({
+        path: path,
+        x: 50, // Some default position
+        y: 50,
+        w: 500, // Some default size
+        h: 400,
+        fontSize: 14,
+        fontFamily: "monospace",
+        color: "black",
+        contentType: 3,
+      });
+      await setPage(newPage, currentPage);
+    },
+    [currentPage, pages, setPage]
+  );
+
   if (pages === undefined || (currentPage !== undefined && pages.size === 0)) {
     return (
       <div className="notes-app-wrapper fixed inset-0 bg-zinc-900/80 backdrop-blur-sm text-zinc-200 p-0 flex justify-center items-center font-sans z-50">
@@ -813,484 +966,694 @@ export default function Notebook() {
 
   return (
     <div className="h-screen w-screen overflow-hidden">
-      {/* Toolbar */}
-      <div className="static z-1 flex top-0 m-auto h-14 width-100 items-center bg-[#191919] gap-2 self-stretch">
-        <div className="flex justify-evenly h-full m-1 rounded-md ">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="default"
-                  className={getButtonClasses(
-                    "home",
-                    "self-center text-gray-400 hover:text-white hover:bg-[#333]"
-                  )}
-                  onClick={() => handleButtonClick("home", closeAppHandler)}
-                >
-                  <Home className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#333] text-white border-[#444]">
-                <p>Back to Home</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <button onClick={zoomOut} className="ml-3">
-            –
-          </button>
-          <span
-            className="zoom-label items-center place-self-center m-2 cursor-pointer"
-            onClick={() => {
-              setScale(1);
-            }}
-          >
-            {(scale * 100).toFixed(0)}%
-          </span>
-          <button onClick={zoomIn}>+</button>
-          <div className="w-4"></div>
-          <Button
-            onClick={() => {
-              actionStack.current.undo();
-              autosaveStart();
-            }}
-            className={`${
-              actionStack.current.canUndo() ? "text-white" : "text-gray-400"
-            } self-center bg-transparent hover:bg-[#333]`}
-          >
-            ↶
-          </Button>
-          <div className="w-1"></div>
-          <Button
-            onClick={() => {
-              actionStack.current.redo();
-              autosaveStart();
-            }}
-            className={`${
-              actionStack.current.canRedo() ? "text-white" : "text-gray-400"
-            } self-center bg-transparent hover:bg-[#333]`}
-          >
-            ↷
-          </Button>
-        </div>
-        <div className="flex items-center h-full gap-2 place-self-center m-auto ">
-          {/* Switch to Pencil*/}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleButtonClick(
-                      "pencil",
-                      () =>
-                        (selectedTool.current =
-                          selectedTool.current == "pen" ? "scroll" : "pen")
-                    )
-                  }
-                  className={getButtonClasses(
-                    "pencil",
-                    `${
-                      selectedTool.current == "pen"
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "text-gray-400 hover:text-white hover:bg-[#333]"
-                    }`
-                  )}
-                >
-                  <PenTool className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#333] text-white border-[#444]">
-                <p>Switch to Drawing Tool</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          {/* Switch to Eraser*/}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleButtonClick(
-                      "eraser",
-                      () =>
-                        (selectedTool.current =
-                          selectedTool.current == "eraser"
-                            ? "scroll"
-                            : "eraser")
-                    )
-                  }
-                  className={getButtonClasses(
-                    "eraser",
-                    `${
-                      selectedTool.current == "eraser"
-                        ? "bg-red-600 text-white hover:bg-red-700"
-                        : "text-gray-400 hover:text-white hover:bg-[#333]"
-                    }`
-                  )}
-                >
-                  <Eraser className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#333] text-white border-[#444]">
-                <p>Switch to Eraser Tool</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-        <div className="flex items-center h-full gap-2 align-middle mr-0">
-          <Dialog open={showNewPageModal} onOpenChange={setShowNewPageModal}>
-            <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={getButtonClasses(
-                  "addPage",
-                  "text-gray-400 hover:text-white hover:bg-[#333]"
-                )}
-                onClick={() => handleButtonClick("addPage")}
-                disabled={!notebookConfig}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-[#222] border-[#333] text-white">
-              <DialogHeader>
-                <DialogTitle>Create a new page</DialogTitle>
-                <DialogDescription className="text-gray-400">
-                  Choose the dimensions and orientation for your new page.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4 space-y-4">
-                <div className="flex items-center gap-4">
-                  <Label htmlFor="page-preset" className="text-right">
-                    Preset
-                  </Label>
-                  <Select
-                    onValueChange={(value) => {
-                      if (value === "a4") {
-                        setNewPageWidth("815");
-                        setNewPageHeight("1152");
-                      } else if (value === "letter") {
-                        setNewPageWidth("816");
-                        setNewPageHeight("1056");
-                      } else if (value === "a3") {
-                        setNewPageWidth("1152");
-                        setNewPageHeight("1630");
-                      } else if (value === "a5") {
-                        setNewPageWidth("576");
-                        setNewPageHeight("815");
-                      }
-                      setPageOrientation("portrait");
-                    }}
-                    defaultValue="a4"
-                  >
-                    <SelectTrigger className="w-[180px] bg-[#333] border-[#444]">
-                      <SelectValue placeholder="Select a preset" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#333] border-[#444] text-white">
-                      <SelectItem value="a3">A3</SelectItem>
-                      <SelectItem value="a4">A4</SelectItem>
-                      <SelectItem value="a5">A5</SelectItem>
-                      <SelectItem value="letter">Letter</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="width">Width (px)</Label>
-                    <Input
-                      id="width"
-                      value={newPageWidth}
-                      onChange={(e) => setNewPageWidth(e.target.value)}
-                      className="bg-[#333] border-[#444] text-white"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="height">Height (px)</Label>
-                    <Input
-                      id="height"
-                      value={newPageHeight}
-                      onChange={(e) => setNewPageHeight(e.target.value)}
-                      className="bg-[#333] border-[#444] text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label>Orientation</Label>
-                  <RadioGroup
-                    className="flex gap-4 mt-2"
-                    onValueChange={(value: "portrait" | "landscape") => {
-                      if (pageOrientation === "portrait" && value === "landscape") {
-                        setNewPageWidth(newPageHeight);
-                        setNewPageHeight(newPageWidth);
-                      } else if (pageOrientation === "landscape" && value === "portrait") {
-                        setNewPageWidth(newPageHeight);
-                        setNewPageHeight(newPageWidth);
-                      }
-                      setPageOrientation(value);
-                    }}
-                    value={pageOrientation}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="portrait" id="r1" />
-                      <Label htmlFor="r1">Portrait</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="landscape" id="r2" />
-                      <Label htmlFor="r2">Landscape</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                <div>
-                  <Label>Insert Position</Label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button className="w-full mt-2 bg-[#333] text-white hover:bg-[#444]">
-                        {{
-                           first: "Position: First",
-                           last: "Position: Last",
-                           before: "Position: Before Current",
-                           after: "Position: After Current",
-                         }[newPageTitle] || "Select Position"}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-full bg-[#333] border-[#444] text-white">
-                      <DropdownMenuItem onClick={() => setNewPageTitle("first")}>
-                        First
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setNewPageTitle("last")}>
-                        Last
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setNewPageTitle("before")}
-                      >
-                        Before Current
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setNewPageTitle("after")}>
-                        After Current
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
+      {/* Canvas View */}
+      <div className={showMonaco ? "hidden" : ""}>
+        {/* Toolbar */}
+        <div className="static z-1 flex top-0 m-auto h-14 width-100 items-center bg-[#191919] gap-2 self-stretch">
+          <div className="flex justify-evenly h-full m-1 rounded-md ">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
-                    className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white"
+                    variant="ghost"
+                    size="default"
+                    className={getButtonClasses(
+                      "home",
+                      "self-center text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                    onClick={() => handleButtonClick("home", closeAppHandler)}
                   >
-                    Cancel
+                    <Home className="h-4 w-4" />
                   </Button>
-                </DialogClose>
-                <Button
-                  className="bg-white text-black hover:bg-gray-200"
-                  onClick={createNewPage}
-                  disabled={!["first", "last", "before", "after"].includes(newPageTitle)}
-                >
-                  Create
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          
-          <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
-          {/* Stroke Size Selector */}
-          {strokeSizes.map((size, i) => {
-            const isActive = i === currentStroke;
-            return (
-              <TooltipProvider key={i}>
-                <Tooltip>
-                  {isActive ? (
-                    // ACTIVE STROKE: Show a Popover to adjust the size
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={getButtonClasses(
-                              `stroke-${i}`,
-                              "relative flex items-center justify-center rounded-md bg-blue-600 hover:bg-blue-700 text-white"
-                            )}
-                          >
-                            <div
-                              className="w-3/4 rounded-full"
-                              style={{
-                                height: `${Math.max(2, size / 1.5)}px`,
-                                backgroundColor: "currentColor",
-                              }}
-                            />
-                          </Button>
-                        </TooltipTrigger>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-56 bg-[#333] border-[#444] text-white">
-                        <div className="grid gap-4">
-                          <div className="space-y-2">
-                            <h4 className="font-medium leading-none">
-                              Pen Size
-                            </h4>
-                            <p className="text-sm text-gray-400">
-                              Adjust the active pen size.
-                            </p>
-                          </div>
-                          <div className="grid gap-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-sm">
-                                {size.toFixed(0)}px
-                              </span>
-                            </div>
-                            <Slider
-                              defaultValue={[size]}
-                              max={50}
-                              min={1}
-                              step={1}
-                              onValueChange={(value) =>
-                                updateStrokeSize(value[0])
-                              }
-                            />
-                          </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  ) : (
-                    // INACTIVE STROKE: Show a button to select it
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() =>
-                          handleButtonClick(`stroke-${i}`, () => setStroke(i))
-                        }
-                        className={getButtonClasses(
-                          `stroke-${i}`,
-                          "relative flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-[#333]"
-                        )}
-                      >
-                        <div
-                          className="w-3/4 rounded-full"
-                          style={{
-                            height: `${Math.max(2, size / 1.5)}px`,
-                            backgroundColor: "currentColor",
-                          }}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                  )}
-                  <TooltipContent className="bg-[#333] text-white border-[#444]">
-                    <p>
-                      {isActive
-                        ? `Current size: ${size}px (Click to edit)`
-                        : `Set stroke size to ${size}px`}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            );
-          })}
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Back to Home</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-          {/* Divider for visual separation */}
-          <div className="h-6 w-px bg-gray-600 mx-1"></div>
-          {/* Erase Page Button */}
-          <TooltipProvider>
+            <button onClick={zoomOut} className="ml-3">
+              –
+            </button>
+            <span
+              className="zoom-label items-center place-self-center m-2 cursor-pointer"
+              onClick={() => {
+                setScale(1);
+              }}
+            >
+              {(scale * 100).toFixed(0)}%
+            </span>
+            <button onClick={zoomIn}>+</button>
+            <div className="w-4"></div>
+            <Button
+              onClick={() => {
+                actionStack.current.undo();
+                autosaveStart();
+              }}
+              className={`${
+                actionStack.current.canUndo() ? "text-white" : "text-gray-400"
+              } self-center bg-transparent hover:bg-[#333]`}
+            >
+              ↶
+            </Button>
+            <div className="w-1"></div>
+            <Button
+              onClick={() => {
+                actionStack.current.redo();
+                autosaveStart();
+              }}
+              className={`${
+                actionStack.current.canRedo() ? "text-white" : "text-gray-400"
+              } self-center bg-transparent hover:bg-[#333]`}
+            >
+              ↷
+            </Button>
+          </div>
+          <div className="flex items-center h-full gap-2 place-self-center m-auto ">
+            {/* Switch to Pencil*/}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleButtonClick("clear", clearPageHandler)}
+                    onClick={() =>
+                      handleButtonClick(
+                        "pencil",
+                        () =>
+                          (selectedTool.current =
+                            selectedTool.current == "pen" ? "scroll" : "pen")
+                      )
+                    }
                     className={getButtonClasses(
-                      "clear",
-                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                      "pencil",
+                      `${
+                        selectedTool.current == "pen"
+                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      }`
                     )}
                   >
-                    <RotateCcw className="h-4 w-4" />
+                    <PenTool className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-[#333] text-white border-[#444]">
-                  <p>Clear Page</p>
+                  <p>Switch to Drawing Tool</p>
                 </TooltipContent>
               </Tooltip>
-              {/* Save Page Button */}
             </TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleButtonClick("save", savePageHandler)}
-                  className={getButtonClasses(
-                    "save",
-                    "text-gray-400 hover:text-white hover:bg-[#333]"
-                  )}
-                >
-                  <Save className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#333] text-white border-[#444]">
-                <p>Save Page</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          {/* Delete Page Button */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleButtonClick("delete", deletePageHandler)}
-                  className={getButtonClasses(
-                    "delete",
-                    "text-gray-400 hover:text-white hover:bg-[#333]"
-                  )}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="bg-[#333] text-white border-[#444]">
-                <p>Delete Page</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
+            {/* Switch to Eraser*/}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleButtonClick(
+                        "eraser",
+                        () =>
+                          (selectedTool.current =
+                            selectedTool.current == "eraser"
+                              ? "scroll"
+                              : "eraser")
+                      )
+                    }
+                    className={getButtonClasses(
+                      "eraser",
+                      `${
+                        selectedTool.current == "eraser"
+                          ? "bg-red-600 text-white hover:bg-red-700"
+                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      }`
+                    )}
+                  >
+                    <Eraser className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Switch to Eraser Tool</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          {/* Button to open a new file */}
+          <Dialog open={isFileDialogOpen} onOpenChange={setIsFileDialogOpen}>
+            <TooltipProvider>
+              <Tooltip>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick("code")}
+                    className={getButtonClasses(
+                      "code",
+                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                  >
+                    <Code className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Open or Create Code File</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-      {/* Scrollable notebook */}
-      <FileDropZone onFilesDrop={onDrop}>
-        <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
-          <div className="grid justify-items-center py-8">
-            {pages !== undefined &&
-              pages.size > 0 &&
-              orderedPages.map((pageId) => {
-                let page = pages.get(pageId);
-                let conf = notebookConfig?.pages.get(pageId);
-                return (
-                  <Page
-                    key={pageId}
-                    pageID={pageId}
-                    pageWidth={conf?.width || PAGE_W}
-                    pageHeight={conf?.height || PAGE_H}
-                    scale={scale}
-                    onPointerEvent={handlePointerEvent}
-                    presenterRef={presenter}
-                    strokeDiameter={style.diameter}
-                    pageData={page}
-                  />
-                );
-              })}
+            <DialogContent className="bg-[#191919] text-white border-[#444]">
+              <DialogHeader>
+                <DialogTitle>Open or Create Code File</DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Select an existing file from this page or create a new one.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-300">
+                  Existing Files on this Page
+                </h3>
+                <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
+                  {currentPage &&
+                  (pages.get(currentPage)?.textBlocks.length || 0) > 0 ? (
+                    pages.get(currentPage)?.textBlocks.map((block) => (
+                      <Button
+                        key={block.path}
+                        variant="outline"
+                        className="justify-start bg-transparent border-[#444] hover:bg-[#333]"
+                        onClick={() => handleFileSelect(block.path as string)}
+                      >
+                        {block.path}
+                      </Button>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500 italic p-2">
+                      No code files on this page yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-300">
+                  Existing Files in this Notebook
+                </h3>
+                <div className="flex flex-col space-y-1 max-h-40 overflow-y-auto rounded-md p-1">
+                  {currentPage &&
+                    (availableTextFiles && availableTextFiles.length > 0 ? (
+                      availableTextFiles.map((path) => (
+                        <Button
+                          key={path}
+                          variant="outline"
+                          className="justify-start bg-transparent border-[#444] hover:bg-[#333]"
+                          onClick={() => {
+                            let exists = pages
+                              .get(currentPage)
+                              ?.textBlocks.find((block) => block.path === path);
+                            if (!exists) {
+                              addCodeFileAsBlock(path);
+                            }
+                            handleFileSelect(path);
+                          }}
+                        >
+                          {path}
+                        </Button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 italic p-2">
+                        No code files on this page yet.
+                      </p>
+                    ))}
+                </div>
+              </div>
+
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-gray-600"></span>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-[#191919] px-2 text-gray-500">Or</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="new-file-name" className="text-gray-300">
+                  Create New File
+                </Label>
+                <Input
+                  id="new-file-name"
+                  placeholder="e.g., my-component.tsx"
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  className="bg-[#222] border-[#444] focus:ring-offset-[#191919] focus:ring-[#555]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateAndOpenFile();
+                    }
+                  }}
+                />
+              </div>
+
+              <DialogFooter className="mt-4">
+                <Button
+                  onClick={handleCreateAndOpenFile}
+                  disabled={!newFileName.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                  Create and Open
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <div className="flex items-center h-full gap-2 align-middle mr-0">
+            {/* Add Page Dropdown */}
+            <div className="flex items-center h-full gap-2 align-middle mr-0">
+              <Dialog
+                open={showNewPageModal}
+                onOpenChange={setShowNewPageModal}
+              >
+                <DialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={getButtonClasses(
+                      "addPage",
+                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                    onClick={() => handleButtonClick("addPage")}
+                    disabled={!notebookConfig}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-[#222] border-[#333] text-white">
+                  <DialogHeader>
+                    <DialogTitle>Create a new page</DialogTitle>
+                    <DialogDescription className="text-gray-400">
+                      Choose the dimensions and orientation for your new page.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4 space-y-4">
+                    <div className="flex items-center gap-4">
+                      <Label htmlFor="page-preset" className="text-right">
+                        Preset
+                      </Label>
+                      <Select
+                        onValueChange={(value) => {
+                          if (value === "a4") {
+                            setNewPageWidth("815");
+                            setNewPageHeight("1152");
+                          } else if (value === "letter") {
+                            setNewPageWidth("816");
+                            setNewPageHeight("1056");
+                          } else if (value === "a3") {
+                            setNewPageWidth("1152");
+                            setNewPageHeight("1630");
+                          } else if (value === "a5") {
+                            setNewPageWidth("576");
+                            setNewPageHeight("815");
+                          }
+                          setPageOrientation("portrait");
+                        }}
+                        defaultValue="a4"
+                      >
+                        <SelectTrigger className="w-[180px] bg-[#333] border-[#444]">
+                          <SelectValue placeholder="Select a preset" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#333] border-[#444] text-white">
+                          <SelectItem value="a3">A3</SelectItem>
+                          <SelectItem value="a4">A4</SelectItem>
+                          <SelectItem value="a5">A5</SelectItem>
+                          <SelectItem value="letter">Letter</SelectItem>
+                          <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="width">Width (px)</Label>
+                        <Input
+                          id="width"
+                          value={newPageWidth}
+                          onChange={(e) => setNewPageWidth(e.target.value)}
+                          className="bg-[#333] border-[#444] text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="height">Height (px)</Label>
+                        <Input
+                          id="height"
+                          value={newPageHeight}
+                          onChange={(e) => setNewPageHeight(e.target.value)}
+                          className="bg-[#333] border-[#444] text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Orientation</Label>
+                      <RadioGroup
+                        className="flex gap-4 mt-2"
+                        onValueChange={(value: "portrait" | "landscape") => {
+                          if (
+                            pageOrientation === "portrait" &&
+                            value === "landscape"
+                          ) {
+                            setNewPageWidth(newPageHeight);
+                            setNewPageHeight(newPageWidth);
+                          } else if (
+                            pageOrientation === "landscape" &&
+                            value === "portrait"
+                          ) {
+                            setNewPageWidth(newPageHeight);
+                            setNewPageHeight(newPageWidth);
+                          }
+                          setPageOrientation(value);
+                        }}
+                        value={pageOrientation}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="portrait" id="r1" />
+                          <Label htmlFor="r1">Portrait</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="landscape" id="r2" />
+                          <Label htmlFor="r2">Landscape</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div>
+                      <Label>Insert Position</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button className="w-full mt-2 bg-[#333] text-white hover:bg-[#444]">
+                            {{
+                              first: "Position: First",
+                              last: "Position: Last",
+                              before: "Position: Before Current",
+                              after: "Position: After Current",
+                            }[newPageTitle] || "Select Position"}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-full bg-[#333] border-[#444] text-white">
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("first")}
+                          >
+                            First
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("last")}
+                          >
+                            Last
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("before")}
+                          >
+                            Before Current
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setNewPageTitle("after")}
+                          >
+                            After Current
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button
+                        variant="outline"
+                        className="bg-transparent text-gray-300 border-[#444] hover:bg-[#333] hover:text-white"
+                      >
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button
+                      className="bg-white text-black hover:bg-gray-200"
+                      onClick={createNewPage}
+                      disabled={
+                        !["first", "last", "before", "after"].includes(
+                          newPageTitle
+                        )
+                      }
+                    >
+                      Create
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
+            {/* Stroke Size Selector */}
+            {strokeSizes.map((size, i) => {
+              const isActive = i === currentStroke;
+              return (
+                <TooltipProvider key={i}>
+                  <Tooltip>
+                    {isActive ? (
+                      // ACTIVE STROKE: Show a Popover to adjust the size
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={getButtonClasses(
+                                `stroke-${i}`,
+                                "relative flex items-center justify-center rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                              )}
+                            >
+                              <div
+                                className="w-3/4 rounded-full"
+                                style={{
+                                  height: `${Math.max(2, size / 1.5)}px`,
+                                  backgroundColor: "currentColor",
+                                }}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 bg-[#333] border-[#444] text-white">
+                          <div className="grid gap-4">
+                            <div className="space-y-2">
+                              <h4 className="font-medium leading-none">
+                                Pen Size
+                              </h4>
+                              <p className="text-sm text-gray-400">
+                                Adjust the active pen size.
+                              </p>
+                            </div>
+                            <div className="grid gap-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono text-sm">
+                                  {size.toFixed(0)}px
+                                </span>
+                              </div>
+                              <Slider
+                                defaultValue={[size]}
+                                max={50}
+                                min={1}
+                                step={1}
+                                onValueChange={(value) =>
+                                  updateStrokeSize(value[0])
+                                }
+                              />
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      // INACTIVE STROKE: Show a button to select it
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            handleButtonClick(`stroke-${i}`, () => setStroke(i))
+                          }
+                          className={getButtonClasses(
+                            `stroke-${i}`,
+                            "relative flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-[#333]"
+                          )}
+                        >
+                          <div
+                            className="w-3/4 rounded-full"
+                            style={{
+                              height: `${Math.max(2, size / 1.5)}px`,
+                              backgroundColor: "currentColor",
+                            }}
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                    )}
+                    <TooltipContent className="bg-[#333] text-white border-[#444]">
+                      <p>
+                        {isActive
+                          ? `Current size: ${size}px (Click to edit)`
+                          : `Set stroke size to ${size}px`}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })}
+
+            {/* Divider for visual separation */}
+            <div className="h-6 w-px bg-gray-600 mx-1"></div>
+            {/* Erase Page Button */}
+            <TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        handleButtonClick("clear", clearPageHandler)
+                      }
+                      className={getButtonClasses(
+                        "clear",
+                        "text-gray-400 hover:text-white hover:bg-[#333]"
+                      )}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-[#333] text-white border-[#444]">
+                    <p>Clear Page</p>
+                  </TooltipContent>
+                </Tooltip>
+                {/* Save Page Button */}
+              </TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleButtonClick("save", savePageHandler)}
+                    className={getButtonClasses(
+                      "save",
+                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                  >
+                    <Save className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Save Page</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {/* Delete Page Button */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleButtonClick("delete", deletePageHandler)
+                    }
+                    className={getButtonClasses(
+                      "delete",
+                      "text-gray-400 hover:text-white hover:bg-[#333]"
+                    )}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Delete Page</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
-      </FileDropZone>
+
+        {/* Scrollable notebook */}
+        <FileDropZone onFilesDrop={onDrop}>
+          <div className="flex-1 overflow-auto h-[calc(100vh-3.5rem)] bg-gray-200">
+            <div className="grid justify-items-center py-8">
+              {pages !== undefined &&
+                pages.size > 0 &&
+                orderedPages.map((pageId) => {
+                  let page = pages.get(pageId);
+                  let conf = notebookConfig?.pages.get(pageId);
+                  return (
+                    <Page
+                      key={pageId}
+                      pageID={pageId}
+                      pageWidth={conf?.width || PAGE_W}
+                      pageHeight={conf?.height || PAGE_H}
+                      scale={scale}
+                      onPointerEvent={handlePointerEvent}
+                      presenterRef={presenter}
+                      strokeDiameter={style.diameter}
+                      pageData={page}
+                    />
+                  );
+                })}
+            </div>
+          </div>
+        </FileDropZone>
+      </div>
+      {/* Monaco Editor View - MODIFIED */}
+      <div className={!showMonaco ? "hidden" : ""}>
+        {/* Conditionally render the Editor OR a loading state */}
+        {isEditorReady ? (
+          <div className="flex flex-col h-screen">
+            <div className="flex flex-row items-center gap-2 bg-[#222] px-4 py-2 border-b border-[#333]">
+              <Button
+                onClick={async () => {
+                  if (currentFilePath) {
+                    await saveText(
+                      currentFilePath,
+                      monacoValue,
+                      filesDirectory
+                    );
+                  }
+                }}
+              >
+                Speichern
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowMonaco(false);
+                }}
+              >
+                Zurück
+              </Button>
+              <Button
+                disabled
+                className="bg-transparent text-gray-400 cursor-default"
+              >
+                {language}
+              </Button>
+            </div>
+            <div className="flex-1">
+              <Editor
+                height="100%"
+                language={language}
+                value={monacoValue}
+                onChange={(value: any) => setMonacoValue(value ?? "")}
+                options={{
+                  lineNumbers: "on",
+                  minimap: { enabled: true },
+                  theme: "github-dark",
+                  wordWrap: "on",
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          // Show a loading indicator while the one-time setup runs
+          <div className="flex justify-center items-center h-full">
+            <p>Initializing Code Editor...</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

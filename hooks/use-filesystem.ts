@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { errorToast } from "./use-toast";
+import { errorToast, toast } from "./use-toast";
 import { NotesCode } from "../handwriting";
 import { nanoid } from "nanoid";
-import { getHighlighter } from "@/lib/highlighter";
+import { shikiToMonaco } from "@shikijs/monaco";
+import { bundledLanguages, bundledThemes, createHighlighter, Highlighter } from "shiki";
 
 // Declaration for the experimental showDirectoryPicker API
 declare const showDirectoryPicker: (
@@ -14,6 +15,7 @@ function isNotebook(handle: FileSystemDirectoryHandle): boolean {
   return handle.name.endsWith(".ncnb");
 }
 
+let alreadySetup = false;
 //TODO Rewrite to use proper functional design patterns
 // Custom hook for managing filesystem interactions and state
 export function useFilesystem() {
@@ -39,7 +41,11 @@ export function useFilesystem() {
       try {
         await getHighlighter();
       } catch (error) {
-        errorToast("Failed to initialize highlighter: " + error.message);
+        toast({
+          title: "Failed to initialize highlighter",
+          description: "Failed to initialize highlighter: " + (error as {message:string}).message,
+          variant: "destructive",
+        })
       }
     })();
   }, []);
@@ -47,8 +53,6 @@ export function useFilesystem() {
   const [showCanvasEditor, setShowCanvasEditor] = useState(false);
   const [strokeColor, setStrokeColor] = useState<string>("#000000");
   const [erasing, setErasing] = useState<boolean>(false);
-  // State to trigger a reload of the currently active pages
-  const [toReloadPages, setToReloadPages] = useState<boolean>(false);
 
   // State for the top-level directory handle selected by the user
   const [topDirectoryHandle, setTopDirectoryHandle] = useState<
@@ -347,6 +351,22 @@ export function useFilesystem() {
     [directoryHandle]
   );
 
+  const [availableTextFiles, setAvailableTextFiles] = useState<string[]>([]);
+  useEffect(() => {
+    if (filesDirectory === undefined) return;
+    (async ()=>{
+      setAvailableTextFiles([]);
+      //@ts-expect-error
+      for await (const [key,value] of filesDirectory.entries() as Iterable<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>){
+        if (value){
+          if (value.kind === "file"){
+            setAvailableTextFiles((files) => [...files, value.name]);
+          }
+        }
+      }
+    })() 
+  },[filesDirectory])
+
   // State for the currently loaded pages of the notebook
   const [pages, setPages] = useState<Map<string, NotesCode.Document>>(
     new Map<string, NotesCode.Document>()
@@ -363,7 +383,7 @@ export function useFilesystem() {
         lastActivePage: currentPage,
         pages: notebookConfig.pages,
       });
-      setToReloadPages(true);
+      reloadPages();
     }
   }, [currentPage]);
 
@@ -937,11 +957,10 @@ export function useFilesystem() {
           let conf = structuredClone(notebookConfig);
           conf.pages = newPgs;
           setNotebookConfig(conf);
-          setToReloadPages(true);
           return Promise.resolve(id);
         });
     },
-    [pagesDirectory, notebookConfig, currentPage, pages, setToReloadPages]
+    [pagesDirectory, notebookConfig, currentPage, pages]
   );
 
   // Deletes a page from the notebook and updates the page linkage
@@ -1017,7 +1036,7 @@ export function useFilesystem() {
         return Promise.resolve();
       });
     },
-    [notebookConfig, pagesDirectory, currentPage, pages, setToReloadPages]
+    [notebookConfig, pagesDirectory, currentPage, pages]
   );
 
   // Unloads the current notebook, saving pages and config
@@ -1053,19 +1072,6 @@ export function useFilesystem() {
       setToLoadNotebook(null);
     }
   }, [toLoadNotebook, openBook]);
-  // Effect to reload pages when toReloadPages state is true
-  useEffect(() => {
-    if (toReloadPages === true && reloadPages !== undefined) {
-      reloadPages()
-        .then(() => {
-          setToReloadPages(false);
-        })
-        .catch((e) => {
-          console.error(e.message, e.stack);
-          setToReloadPages(true);
-        });
-    }
-  }, [toReloadPages, reloadPages, notebookConfig]);
 
   // Gets all page IDs in their correct order
   const getPagesInOrder = useCallback(() => {
@@ -1229,29 +1235,72 @@ export function useFilesystem() {
     [filesDirectory]
   );
 
+  const deleteFile = useCallback(
+    async (filename: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+      if (txtDirHandle === undefined) txtDirHandle = filesDirectory;
+      if (!txtDirHandle) {
+        return Promise.reject("Files directory not set");
+      }
+      try {
+        await txtDirHandle.removeEntry(filename);
+        // Optional: ggf. aus dem Cache entfernen!
+        setTextCache((oldCache) => {
+          const newCache = new Map(oldCache);
+          newCache.delete(filename);
+          return newCache;
+        });
+        return Promise.resolve();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
+    [filesDirectory, setTextCache]
+  );
+
   // Saves a text/code file to the files directory
   const saveText = useCallback(
-    (path: string, txt: string, txtDirHandle?: FileSystemDirectoryHandle) => {
+    async (
+      path: string,
+      txt: string,
+      txtDirHandle?: FileSystemDirectoryHandle
+    ) => {
       if (txtDirHandle === undefined) {
         txtDirHandle = filesDirectory;
       }
       if (txtDirHandle === undefined) {
         return Promise.reject("No files directory set");
       }
-      return txtDirHandle
-        .getFileHandle(path, { create: true })
-        .then((txtHandle) => {
-          return txtHandle.createWritable({
-            keepExistingData: false,
-          });
-        })
-        .then((writable) => {
-          writable.write(txt);
-          return writable.close();
-        });
+      let txtHandle = await txtDirHandle.getFileHandle(path, { create: true });
+      let writable = await txtHandle.createWritable({
+        keepExistingData: false,
+      });
+      writable.write(txt);
+      setTextCache((oldCache) => {
+        let newCache = new Map(oldCache);
+        newCache.set(path, txt);
+        return newCache;
+      });
+      return writable.close();
     },
     [filesDirectory]
   );
+
+  const highlighter = useRef<Highlighter | null>(null);
+  async function getHighlighter() {
+  if (highlighter.current == null) {
+    let themes = Object.keys(bundledThemes);
+    highlighter.current = await createHighlighter({
+      themes: themes,
+      langs: Object.keys(bundledLanguages),
+    });
+    let theme = highlighter.current.getTheme("github-light");
+    let newTheme = { ...theme, name: "light" };
+    highlighter.current.loadTheme(newTheme);
+    return highlighter.current;
+  } else {
+    return highlighter.current;
+  }
+}
 
   const selectedTool = useRef("pen");
   const currentPageRef = useRef<string | null>(null);
@@ -1305,7 +1354,6 @@ export function useFilesystem() {
     currentPageRef,
     deletePage,
     getPagesInOrder,
-    setToReloadPages,
     unloadNotebook,
     showCanvasEditor,
     setShowCanvasEditor,
@@ -1315,6 +1363,7 @@ export function useFilesystem() {
     setErasing,
     loadImage,
     loadText,
+    deleteFile,
     saveText,
     filesDirectory,
     setPage,
@@ -1326,5 +1375,8 @@ export function useFilesystem() {
     setRedrawAllPages,
     redrawPage,
     setRedrawPage,
+    textCache,
+    availableTextFiles,
+    getHighlighter,
   };
 }
