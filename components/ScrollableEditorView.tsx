@@ -635,7 +635,6 @@ export default function Notebook() {
             original: newTextBlock,
           };
         });
-        console.log(newSelectedItems);
         dragItemsFinal.current = newSelectedItems;
         setPage(new NotesCode.Document(updatedPage), currentPageRef.current);
         lastPointRef.current = { x, y }; // Update last point for next move
