@@ -170,6 +170,10 @@ export const Page: FC<PageProps> = ({
       onPointerUp={handlePointerUp}
       onPointerEnter={onPointerEnter}
       onContextMenu={onContextMenu}
+      onDrag={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <div
         className="origin-top-left will-change-transform overflow-hidden"
