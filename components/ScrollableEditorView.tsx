@@ -19,7 +19,10 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Settings,
+  Square,
   Trash2,
+  MousePointer,
 } from "lucide-react";
 import {
   Tooltip,
@@ -31,8 +34,11 @@ import { Button } from "./ui/button";
 import { toast } from "@/hooks/use-toast";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { PopoverPicker } from "./popOverPicker";
@@ -141,6 +147,45 @@ export default function Notebook() {
   const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
 
+  // --- Selection Tool State ---
+  const [selectionRect, setSelectionRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  // Track if we are actively selecting
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionBoundingBox, setSelectionBoundingBox] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [selectedItems, setSelectedItems] = useState<{
+    strokes: { original: NotesCode.Stroke; index: number }[];
+    images: { original: NotesCode.Image; index: number }[];
+    textBlocks: { original: NotesCode.TextBlock; index: number }[];
+  } | null>(null);
+  const [selectionConfig, setSelectionConfig] = useState({
+    handwriting: true,
+    images: true,
+    text: true,
+  });
+  const selectionStartPoint = useRef<{ x: number; y: number } | null>(null);
+  const dragStartPositions = useRef<{
+    boundingBox: { x: number; y: number; width: number; height: number };
+    strokes: { original: NotesCode.Stroke; index: number }[];
+    images: { original: NotesCode.Image; index: number }[];
+    textBlocks: { original: NotesCode.TextBlock; index: number }[];
+  } | null>(null);
+  const dragStartPoint = useRef<{ x: number; y: number } | null>(null);
+  const dragItemsFinal = useRef<{
+    strokes: { original: NotesCode.Stroke; index: number }[];
+    images: { original: NotesCode.Image; index: number }[];
+    textBlocks: { original: NotesCode.TextBlock; index: number }[];
+  } | null>(null);
+
   useEffect(() => {
     setStyle((s) => ({
       ...s,
@@ -184,7 +229,7 @@ export default function Notebook() {
         const monaco = await loader.init();
 
         // 4. Bridge shiki and monaco. This will now include our dummy 'light' theme.
-        shikiToMonaco(highlighter as Highlighter, monaco);
+        shikiToMonaco(highlighter as Highlighter, monaco as any);
 
         // 5. Mark setup as complete and update state to trigger render
         isMonacoConfigured = true;
@@ -344,13 +389,143 @@ export default function Notebook() {
     }
   }
 
+  class MoveElementsAction implements Action {
+    type = "moveElements";
+    prev = null;
+    next = null;
+    payload: {
+      id: string;
+      initialStrokes: { stroke: NotesCode.Stroke; index: number }[];
+      finalStrokes: { stroke: NotesCode.Stroke; index: number }[];
+      initialImages: { image: NotesCode.Image; index: number }[];
+      finalImages: { image: NotesCode.Image; index: number }[];
+      initialTextBlocks: { textBlock: NotesCode.TextBlock; index: number }[];
+      finalTextBlocks: { textBlock: NotesCode.TextBlock; index: number }[];
+    };
+
+    constructor(
+      id: string,
+      initialStrokes: { stroke: NotesCode.Stroke; index: number }[],
+      finalStrokes: { stroke: NotesCode.Stroke; index: number }[],
+      initialImages: { image: NotesCode.Image; index: number }[],
+      finalImages: { image: NotesCode.Image; index: number }[],
+      initialTextBlocks: { textBlock: NotesCode.TextBlock; index: number }[],
+      finalTextBlocks: { textBlock: NotesCode.TextBlock; index: number }[]
+    ) {
+      this.payload = {
+        id,
+        initialStrokes,
+        finalStrokes,
+        initialImages,
+        finalImages,
+        initialTextBlocks,
+        finalTextBlocks,
+      };
+    }
+
+    execute(state: {
+      setPage: (page: NotesCode.Document, id?: string) => void;
+      pages: Map<string, NotesCode.Document>;
+    }) {
+      const page = state.pages.get(this.payload.id);
+      if (!page) return;
+      const newPage = structuredClone(page);
+      this.payload.finalStrokes.forEach(({ stroke, index }) => {
+        newPage.strokes[index] = stroke;
+      });
+      this.payload.finalImages.forEach(({ image, index }) => {
+        newPage.images[index] = image;
+      });
+      this.payload.finalTextBlocks.forEach(({ textBlock, index }) => {
+        newPage.textBlocks[index] = textBlock;
+      });
+      state.setPage(newPage, this.payload.id);
+    }
+
+    rollback(state: {
+      setPage: (page: NotesCode.Document, id?: string) => void;
+      pages: Map<string, NotesCode.Document>;
+    }) {
+      const page = state.pages.get(this.payload.id);
+      if (!page) return;
+      const newPage = structuredClone(page);
+      this.payload.initialStrokes.forEach(({ stroke, index }) => {
+        newPage.strokes[index] = stroke;
+      });
+      this.payload.initialImages.forEach(({ image, index }) => {
+        newPage.images[index] = image;
+      });
+      this.payload.initialTextBlocks.forEach(({ textBlock, index }) => {
+        newPage.textBlocks[index] = textBlock;
+      });
+      state.setPage(newPage, this.payload.id);
+    }
+  }
+
   function pointerDown(
     x: number,
     y: number,
     pointerType: string,
     pageID: string,
-    pressure: number
+    pressure: number,
+    e: PointerEvent
   ) {
+    // right click -> exit
+    if (e.button === 2) return;
+    if (selectedTool.current === "selection-select") {
+      selectedTool.current = "selection-selecting";
+      setIsSelecting(true);
+      pointerDownRef.current = true;
+      selectionStartPoint.current = { x, y };
+      setSelectionRect({ x, y, width: 0, height: 0 });
+      setSelectionBoundingBox(null);
+      setSelectedItems(null);
+    } else if (selectedTool.current === "selection-selected") {
+      if (selectionBoundingBox === null) {
+        setSelectionRect(null);
+        setSelectionBoundingBox(null);
+        setSelectedItems(null);
+        setIsSelecting(false);
+        pointerDownRef.current = false;
+        selectedTool.current = "selection-select";
+        return;
+      }
+      if (
+        selectionBoundingBox &&
+        !(
+          x >= selectionBoundingBox.x &&
+          x <= selectionBoundingBox.x + selectionBoundingBox.width &&
+          y >= selectionBoundingBox.y &&
+          y <= selectionBoundingBox.y + selectionBoundingBox.height
+        )
+      ) {
+        selectedTool.current = "selection-select";
+        setSelectionRect(null);
+        selectionStartPoint.current = null;
+        dragItemsFinal.current = null;
+        dragStartPoint.current = null;
+        setIsSelecting(false);
+        pointerDownRef.current = false;
+        setSelectedItems(null);
+        setSelectionBoundingBox(null);
+      }
+      if (
+        x >= selectionBoundingBox.x &&
+        x <= selectionBoundingBox.x + selectionBoundingBox.width &&
+        y >= selectionBoundingBox.y &&
+        y <= selectionBoundingBox.y + selectionBoundingBox.height
+      ) {
+        selectedTool.current = "selection-dragging";
+        dragStartPositions.current = {
+          boundingBox: selectionBoundingBox,
+          strokes: structuredClone(selectedItems?.strokes) || [],
+          images: structuredClone(selectedItems?.images) || [],
+          textBlocks: structuredClone(selectedItems?.textBlocks) || [],
+        };
+        dragStartPoint.current = { x: x, y: y };
+        return;
+      }
+    }
     if (pointerType !== "pen" && onlyPen) return;
     drawing.current = true;
     pointerDownRef.current = true;
@@ -375,15 +550,109 @@ export default function Notebook() {
     y: number,
     canvas: RefObject<HTMLCanvasElement | null>
   ) => {
-    if (
-      currentPageRef.current === null ||
-      selectedTool.current == "scroll" ||
-      canvas.current === null
-    )
+    if (currentPageRef.current === null || selectedTool.current == "scroll") {
       return;
-    const ctx = canvas.current.getContext("2d");
-    if (ctx === undefined || ctx === null) return;
+    }
+    if (selectedTool.current.startsWith("selection")) {
+      if (
+        selectedTool.current === "selection-selecting" &&
+        selectionStartPoint.current
+      ) {
+        const newRect = {
+          x: Math.min(selectionStartPoint.current.x, x),
+          y: Math.min(selectionStartPoint.current.y, y),
+          width: Math.abs(x - selectionStartPoint.current.x),
+          height: Math.abs(y - selectionStartPoint.current.y),
+        };
+        setSelectionRect(newRect);
+        setIsSelecting(true);
+        pointerDownRef.current = true;
+        return;
+      }
+
+      if (
+        selectedTool.current === "selection-dragging" &&
+        dragStartPositions.current &&
+        lastPointRef.current &&
+        dragStartPoint.current &&
+        selectedItems
+      ) {
+        const dx = x - dragStartPoint.current.x;
+        const dy = y - dragStartPoint.current.y;
+
+        const page = pages.get(currentPageRef.current);
+        if (!page) return;
+
+        const updatedPage = structuredClone(page);
+        let newSelectedItems = structuredClone(selectedItems);
+        newSelectedItems.strokes.forEach(({ index }) => {
+          const originalStroke = dragStartPositions.current!.strokes.find(
+            (s) => s.index === index
+          )!.original;
+          const newPoints = (originalStroke.points ?? []).map((p) => ({
+            ...p,
+            x: (p?.x ?? 0) + dx,
+            y: (p?.y ?? 0) + dy,
+          }));
+          const newStroke = structuredClone(originalStroke);
+          newStroke.points = newPoints;
+          updatedPage.strokes[index] = newStroke;
+          newSelectedItems.strokes[index] = {
+            index: index,
+            original: newStroke,
+          };
+        });
+
+        selectedItems?.images.forEach(({ index }) => {
+          const originalImage = dragStartPositions.current!.images.find(
+            (i) => i.index === index
+          )!.original;
+          const newImage = structuredClone(originalImage);
+          newImage.x = originalImage.x + dx;
+          newImage.y = originalImage.y + dy;
+          updatedPage.images[index] = newImage;
+          newSelectedItems.images[index] = {
+            index: index,
+            original: newImage,
+          };
+        });
+
+        selectedItems?.textBlocks.forEach(({ index }) => {
+          const originalTextBlock = dragStartPositions.current!.textBlocks.find(
+            (t) => index === t.index
+          )!.original;
+          const newTextBlock = structuredClone(originalTextBlock);
+          newTextBlock.x = originalTextBlock.x + dx;
+          newTextBlock.y = originalTextBlock.y + dy;
+          updatedPage.textBlocks[index] = newTextBlock;
+          newSelectedItems.textBlocks[index] = {
+            index: index,
+            original: newTextBlock,
+          };
+        });
+        console.log(newSelectedItems);
+        dragItemsFinal.current = newSelectedItems;
+        setPage(new NotesCode.Document(updatedPage), currentPageRef.current);
+        lastPointRef.current = { x, y }; // Update last point for next move
+        // Update selection bounding box to move with the cursor
+        if (selectionBoundingBox) {
+          setSelectionBoundingBox({
+            x: dragStartPositions.current!.boundingBox.x + dx,
+            y: dragStartPositions.current!.boundingBox.y + dy,
+            width: dragStartPositions.current!.boundingBox.width,
+            height: dragStartPositions.current!.boundingBox.height,
+          });
+        }
+        return;
+      }
+      return; // Do nothing if not selecting or dragging
+    }
+
+    // --- Default Drawing/Erasing Logic --- //
     if (!drawing.current || (pointerType !== "pen" && onlyPen)) return;
+    const ctx = canvas.current?.getContext("2d");
+    if (!ctx) return;
+
     ctx.globalAlpha = selectedTool.current == "eraser" ? 0.5 : 1;
     ctx.strokeStyle = style.color;
     ctx.lineWidth =
@@ -396,10 +665,8 @@ export default function Notebook() {
     ctx.lineTo(x, y);
     ctx.stroke();
 
-    lastPointRef.current = {
-      x: x,
-      y: y,
-    };
+    lastPointRef.current = { x, y };
+
     setPoints((pts) => [
       ...pts,
       new NotesCode.Point({
@@ -408,6 +675,7 @@ export default function Notebook() {
         pressure: pointerType === "touch" ? 0.5 : pressure,
       }),
     ]);
+
     if (presenter.current !== null) {
       let st = structuredClone(style);
       st.diameter =
@@ -419,77 +687,325 @@ export default function Notebook() {
     }
   };
 
-  const pointerUp = useCallback(() => {
-    if (!drawing.current || !pages || !currentPageRef.current) return;
-    drawing.current = false;
-    lastPointRef.current = null;
-    if (selectedTool.current == "pen") {
-      dontShow.current = true;
-      let prev = pages.get(currentPageRef.current);
+  const pointerUp = useCallback(
+    (
+      selectionRect: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null,
+      selectedItems: {
+        strokes: { original: NotesCode.Stroke; index: number }[];
+        images: { original: NotesCode.Image; index: number }[];
+        textBlocks: { original: NotesCode.TextBlock; index: number }[];
+      } | null
+    ) => {
+      if (selectedTool.current.startsWith("selection")) {
+        const pageId = currentPageRef.current!;
+        const page = pages.get(pageId);
+        if (!page) return;
 
-      if (!prev) return;
-      actionStack.current.addAction(
-        new AddStrokeAction(
-          new NotesCode.Stroke({
-            points: points,
-            color: style.color,
-            width: style.diameter,
-          }),
-          currentPageRef.current
-        )
-      );
-      autosaveStart();
-    } else if (selectedTool.current == "eraser") {
-      let page = pages.get(currentPageRef.current);
-      if (page === undefined) return;
-      const deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[] = [];
-      const newStrokes: NotesCode.Stroke[] = [];
-      if (points.length >= 2) {
-        const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
-        for (let i = 1; i < points.length; i++) {
-          eraserSegments.push([points[i - 1], points[i]]);
+        // --- DRAG END --- //
+        if (
+          selectedTool.current === "selection-dragging" &&
+          dragStartPositions.current &&
+          dragItemsFinal.current
+        ) {
+          const finalStrokes = dragItemsFinal.current.strokes.map(
+            ({ original, index }) => ({
+              stroke: original,
+              index,
+            })
+          );
+          const finalImages = dragItemsFinal.current.images.map(
+            ({ original, index }) => ({
+              image: original,
+              index,
+            })
+          );
+          const finalTextBlocks = dragItemsFinal.current.textBlocks.map(
+            ({ original, index }) => ({
+              textBlock: original,
+              index,
+            })
+          );
+
+          actionStack.current.addAction(
+            new MoveElementsAction(
+              pageId,
+              dragStartPositions.current.strokes.map(({ original, index }) => ({
+                stroke: original,
+                index,
+              })),
+              finalStrokes as any,
+              dragStartPositions.current.images.map(({ original, index }) => ({
+                image: original,
+                index,
+              })),
+              finalImages as any,
+              dragStartPositions.current.textBlocks.map(
+                ({ original, index }) => ({
+                  textBlock: original,
+                  index,
+                })
+              ),
+              finalTextBlocks as any
+            )
+          );
+          autosaveStart();
+          dragStartPositions.current = null;
+          dragStartPoint.current = null;
+          // Update selection bounding box after drag finished
+          const allPoints = [
+            ...finalStrokes.flatMap((s) => s.stroke.points),
+            ...finalImages.flatMap((i) => [
+              { x: i.image.x, y: i.image.y },
+              {
+                x: (i.image.x ?? 0) + (i.image.scaleX ?? 0),
+                y: (i.image.y ?? 0) + (i.image.scaleY ?? 0),
+              },
+            ]),
+            ...finalTextBlocks.flatMap((t) => [
+              { x: t.textBlock.x, y: t.textBlock.y },
+              {
+                x: (t.textBlock.x ?? 0) + (t.textBlock.w ?? 0),
+                y: (t.textBlock.y ?? 0) + (t.textBlock.h ?? 0),
+              },
+            ]),
+          ];
+          if (allPoints.length > 0) {
+            const minX = Math.min(...allPoints.map((p) => p?.x ?? 0));
+            const maxX = Math.max(...allPoints.map((p) => p?.x ?? 0));
+            const minY = Math.min(...allPoints.map((p) => p?.y ?? 0));
+            const maxY = Math.max(...allPoints.map((p) => p?.y ?? 0));
+            setSelectionBoundingBox({
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY,
+            });
+            // Set selection to final elements so selection does not revert
+            setSelectedItems({
+              strokes: dragItemsFinal.current.strokes,
+              images: dragItemsFinal.current.images,
+              textBlocks: dragItemsFinal.current.textBlocks,
+            });
+          } else {
+            setSelectionBoundingBox(null);
+            setSelectedItems(null);
+          }
+          setIsSelecting(false);
+          pointerDownRef.current = false;
         }
-        for (let idx = 0; idx < page.strokes.length; idx++) {
-          const stroke = page.strokes[idx];
-          if (stroke.points === undefined || stroke.points === null) return;
-          if (!stroke.points || stroke.points.length < 2)
-            newStrokes.push(stroke as NotesCode.Stroke);
-          let checkStroke = (stroke: NotesCode.Stroke) => {
-            for (let i = 1; i < stroke.points.length; i++) {
-              const strokeSegStart = stroke.points[i - 1];
-              const strokeSegEnd = stroke.points[i];
-              for (const [eStart, eEnd] of eraserSegments) {
-                if (
-                  checkLineIntersection(
-                    strokeSegStart as NotesCode.Point,
-                    strokeSegEnd as NotesCode.Point,
-                    eStart,
-                    eEnd
+        // --- SELECTION END --- //
+        if (selectedTool.current === "selection-selecting" && selectionRect) {
+          const selectedStrokes = selectionConfig.handwriting
+            ? page.strokes
+                .map((stroke, index) => ({ original: stroke, index }))
+                .filter((stroke) =>
+                  (stroke.original.points ?? []).some(
+                    (point) =>
+                      (point?.x ?? 0) >= selectionRect.x &&
+                      (point?.x ?? 0) <=
+                        selectionRect.x + selectionRect.width &&
+                      (point?.y ?? 0) >= selectionRect.y &&
+                      (point?.y ?? 0) <= selectionRect.y + selectionRect.height
                   )
-                ) {
-                  deletedStrokes.push({
-                    stroke: stroke as NotesCode.Stroke,
-                    idx: idx,
-                  }); // Schnitt gefunden → stroke löschen
-                  return;
-                }
-              }
-            }
-            newStrokes.push(stroke as NotesCode.Stroke); // kein Schnitt → stroke behalten
-          };
-          checkStroke(stroke as NotesCode.Stroke);
+                )
+            : [];
+
+          const selectedImages = selectionConfig.images
+            ? page.images
+                .map((image, index) => ({ original: image, index }))
+                .filter((image) => {
+                  const imageRight =
+                    (image.original.x ?? 0) + (image.original.scaleX ?? 0);
+                  const imageBottom =
+                    (image.original.y ?? 0) + (image.original.scaleY ?? 0);
+                  return (
+                    imageRight >= selectionRect.x &&
+                    (image.original.x ?? 0) <=
+                      selectionRect.x + selectionRect.width &&
+                    imageBottom >= selectionRect.y &&
+                    (image.original.y ?? 0) <=
+                      selectionRect.y + selectionRect.height
+                  );
+                })
+            : [];
+
+          const selectedTextBlocks = selectionConfig.text
+            ? page.textBlocks
+                .map((textBlock, index) => ({ original: textBlock, index }))
+                .filter((textBlock) => {
+                  const textBlockRight =
+                    (textBlock.original.x ?? 0) + (textBlock.original.w ?? 0);
+                  const textBlockBottom =
+                    (textBlock.original.y ?? 0) + (textBlock.original.h ?? 0);
+                  return (
+                    textBlockRight >= selectionRect.x &&
+                    (textBlock.original.x ?? 0) <=
+                      selectionRect.x + selectionRect.width &&
+                    textBlockBottom >= selectionRect.y &&
+                    (textBlock.original.y ?? 0) <=
+                      selectionRect.y + selectionRect.height
+                  );
+                })
+            : [];
+
+          if (
+            selectedStrokes.length > 0 ||
+            selectedImages.length > 0 ||
+            selectedTextBlocks.length > 0
+          ) {
+            const allPoints = [
+              ...selectedStrokes.flatMap((s) => s.original.points),
+              ...selectedImages.flatMap((i) => [
+                { x: i.original.x, y: i.original.y },
+                {
+                  x: (i.original.x ?? 0) + (i.original.scaleX ?? 0),
+                  y: (i.original.y ?? 0) + (i.original.scaleY ?? 0),
+                },
+              ]),
+              ...selectedTextBlocks.flatMap((t) => [
+                { x: t.original.x, y: t.original.y },
+                {
+                  x: (t.original.x ?? 0) + (t.original.w ?? 0),
+                  y: (t.original.y ?? 0) + (t.original.h ?? 0),
+                },
+              ]),
+            ];
+
+            const minX = Math.min(...allPoints.map((p) => p?.x ?? 0));
+            const maxX = Math.max(...allPoints.map((p) => p?.x ?? 0));
+            const minY = Math.min(...allPoints.map((p) => p?.y ?? 0));
+            const maxY = Math.max(...allPoints.map((p) => p?.y ?? 0));
+
+            setSelectionBoundingBox({
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY,
+            });
+            setSelectedItems({
+              strokes: selectedStrokes as any,
+              images: selectedImages as any,
+              textBlocks: selectedTextBlocks as any,
+            });
+          } else {
+            setSelectionBoundingBox(null);
+            setSelectedItems(null);
+          }
+          setSelectionRect(null);
         }
+        selectedTool.current = "selection-selected";
+
+        // --- RESET --- //
+        return; // Exit early for selection tool
+      }
+
+      // --- Default Pointer Up Logic (Pen/Eraser) --- //
+      if (!drawing.current || !currentPageRef.current) return;
+      drawing.current = false;
+      lastPointRef.current = null;
+      if (selectedTool.current == "pen") {
+        dontShow.current = true;
+        let prev = pages.get(currentPageRef.current);
+
+        if (!prev) return;
         actionStack.current.addAction(
-          new DeleteStrokesAction(
-            deletedStrokes,
-            newStrokes,
+          new AddStrokeAction(
+            new NotesCode.Stroke({
+              points: points,
+              color: style.color,
+              width: style.diameter,
+            }),
             currentPageRef.current
           )
         );
         autosaveStart();
+      } else if (selectedTool.current == "eraser") {
+        let page = pages.get(currentPageRef.current);
+        if (page === undefined) return;
+        const deletedStrokes: { stroke: NotesCode.Stroke; idx: number }[] = [];
+        const newStrokes: NotesCode.Stroke[] = [];
+        if (points.length >= 2) {
+          const eraserSegments: [NotesCode.Point, NotesCode.Point][] = [];
+          for (let i = 1; i < points.length; i++) {
+            eraserSegments.push([points[i - 1], points[i]]);
+          }
+          for (let idx = 0; idx < page.strokes.length; idx++) {
+            const stroke = page.strokes[idx];
+            if (stroke.points === undefined || stroke.points === null) return;
+            if (!stroke.points || stroke.points.length < 2)
+              newStrokes.push(stroke as NotesCode.Stroke);
+            let checkStroke = (stroke: NotesCode.Stroke) => {
+              for (let i = 1; i < stroke.points.length; i++) {
+                const strokeSegStart = stroke.points[i - 1];
+                const strokeSegEnd = stroke.points[i];
+                for (const [eStart, eEnd] of eraserSegments) {
+                  if (
+                    checkLineIntersection(
+                      strokeSegStart as NotesCode.Point,
+                      strokeSegEnd as NotesCode.Point,
+                      eStart,
+                      eEnd
+                    )
+                  ) {
+                    deletedStrokes.push({
+                      stroke: stroke as NotesCode.Stroke,
+                      idx: idx,
+                    }); // Schnitt gefunden → stroke löschen
+                    return;
+                  }
+                }
+              }
+              newStrokes.push(stroke as NotesCode.Stroke); // kein Schnitt → stroke behalten
+            };
+            checkStroke(stroke as NotesCode.Stroke);
+          }
+          actionStack.current.addAction(
+            new DeleteStrokesAction(
+              deletedStrokes,
+              newStrokes,
+              currentPageRef.current
+            )
+          );
+          autosaveStart();
+        }
+      }
+    },
+    [
+      points,
+      pages,
+      currentPage,
+      style,
+      selectionRect,
+      selectedItems,
+      selectionConfig,
+    ]
+  );
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (selectedTool.current.startsWith("selection")) {
+      e.preventDefault();
+      // If a selection is active, cancel selection mode and keep selected items
+      if (selectedTool.current === "selection-selecting") {
+        setSelectionRect(null);
+        setSelectionBoundingBox(null);
+        setIsSelecting(false);
+        pointerDownRef.current = false;
+      } else if (selectedTool.current === "selection-selected") {
+        // If already selected, just exit selection mode (do not clear selectedItems)
+        selectedTool.current = "selection-select";
+        setSelectionRect(null);
+        setIsSelecting(false);
+        pointerDownRef.current = false;
+        setSelectedItems(null);
+        setSelectionBoundingBox(null);
       }
     }
-  }, [points, pages, currentPage]);
+  };
 
   const handlePointerEvent = useCallback(
     (
@@ -506,7 +1022,7 @@ export default function Notebook() {
       const pressure = e.nativeEvent.pressure;
       switch (type) {
         case "down":
-          pointerDown(px, py, pointerType, pageID, pressure);
+          pointerDown(px, py, pointerType, pageID, pressure, e.nativeEvent);
           break;
         case "move":
           if (!drawing.current && pageID !== currentPageRef.current) {
@@ -519,11 +1035,11 @@ export default function Notebook() {
           pointerMove(e.nativeEvent, pointerType, pressure, px, py, canvas);
           break;
         case "up":
-          pointerUp();
+          pointerUp(selectionRect, selectedItems);
           break;
       }
     },
-    [points]
+    [points, selectionRect, selectionBoundingBox, selectedItems, selectedTool]
   );
 
   const zoomIn = () => {
@@ -1102,6 +1618,83 @@ export default function Notebook() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            {/* Switch to Selection Tool */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleButtonClick("selection", () => {
+                        selectedTool.current = selectedTool.current.startsWith(
+                          "selection"
+                        )
+                          ? "scroll"
+                          : "selection-select";
+                        if (selectedTool.current === "scroll") {
+                          setIsSelecting(false);
+                          setSelectionRect(null);
+                          setSelectionBoundingBox(null);
+                          setSelectedItems(null);
+                          drawing.current = false;
+                          lastPointRef.current = null;
+                        }
+                      })
+                    }
+                    className={getButtonClasses(
+                      "selection",
+                      `${
+                        selectedTool.current.startsWith("selection")
+                          ? "bg-green-600 text-white hover:bg-green-700"
+                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      }`
+                    )}
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>Switch to Selection Tool</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {/* Selection Config Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-white hover:bg-[#333]"
+                  disabled={!selectedTool.current.startsWith("selection")}
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-[#333] border-[#444] text-white">
+                <DropdownMenuLabel>Selectable Items</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-gray-600" />
+                <DropdownMenuCheckboxItem
+                  checked={selectionConfig.handwriting}
+                  onCheckedChange={(checked) =>
+                    setSelectionConfig((prev) => ({
+                      ...prev,
+                      handwriting: checked,
+                    }))
+                  }
+                >
+                  Handwriting
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={selectionConfig.text}
+                  onCheckedChange={(checked) =>
+                    setSelectionConfig((prev) => ({ ...prev, text: checked }))
+                  }
+                >
+                  Text Blocks
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           {/* Button to open a new file */}
           <Dialog open={isFileDialogOpen} onOpenChange={setIsFileDialogOpen}>
@@ -1412,6 +2005,39 @@ export default function Notebook() {
               </Dialog>
             </div>
             <PopoverPicker color={strokeColor} onChange={setStrokeColor} />
+            {/* Toggle Pen Only Mode Button */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={getButtonClasses(
+                      "penOnly",
+                      `rounded p-2 ${
+                        onlyPen
+                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                          : "text-gray-400 hover:text-white hover:bg-[#333]"
+                      }`
+                    )}
+                    onClick={() => setOnlyPen((prev) => !prev)}
+                    aria-label={onlyPen ? "Pen Only" : "Pen & Mouse"}
+                  >
+                    {onlyPen ? (
+                      <PenTool className="h-5 w-5" />
+                    ) : (
+                      <MousePointer className="h-5 w-5" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#333] text-white border-[#444]">
+                  <p>
+                    {onlyPen
+                      ? "Pen Only: Drawing only works with stylus"
+                      : "Pen & Mouse: Drawing works with stylus and mouse"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {/* Stroke Size Selector */}
             {strokeSizes.map((size, i) => {
               const isActive = i === currentStroke;
@@ -1598,6 +2224,15 @@ export default function Notebook() {
                       presenterRef={presenter}
                       strokeDiameter={style.diameter}
                       pageData={page}
+                      selectionRect={
+                        currentPageRef.current === pageId && isSelecting
+                          ? selectionRect
+                          : null
+                      }
+                      selectionBoundingBox={
+                        currentPage === pageId ? selectionBoundingBox : null
+                      }
+                      onContextMenu={handleContextMenu}
                     />
                   );
                 })}
