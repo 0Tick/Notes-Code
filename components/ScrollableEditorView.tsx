@@ -1616,8 +1616,16 @@ export default function Notebook() {
                       handleButtonClick(
                         "pencil",
                         () =>
-                          (selectedTool.current =
+                        {
+                          setIsSelecting(false);
+                          setSelectionRect(null);
+                          setSelectionBoundingBox(null);
+                          setSelectedItems(null);
+                          drawing.current = false;
+                          lastPointRef.current = null;
+                          return (selectedTool.current =
                             selectedTool.current == "pen" ? "scroll" : "pen")
+                        }
                       )
                     }
                     className={getButtonClasses(
@@ -1647,11 +1655,18 @@ export default function Notebook() {
                     onClick={() =>
                       handleButtonClick(
                         "eraser",
-                        () =>
-                          (selectedTool.current =
+                        () =>{
+                          setIsSelecting(false);
+                          setSelectionRect(null);
+                          setSelectionBoundingBox(null);
+                          setSelectedItems(null);
+                          drawing.current = false;
+                          lastPointRef.current = null;
+                          return (selectedTool.current =
                             selectedTool.current == "eraser"
                               ? "scroll"
                               : "eraser")
+                        }
                       )
                     }
                     className={getButtonClasses(

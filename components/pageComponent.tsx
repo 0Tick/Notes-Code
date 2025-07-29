@@ -174,6 +174,14 @@ export const Page: FC<PageProps> = ({
         e.preventDefault();
         e.stopPropagation();
       }}
+      onDragStart={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDragStartCapture={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <div
         className="origin-top-left will-change-transform overflow-hidden"
