@@ -71,19 +71,48 @@ body {
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
+.undraggable {
+  -webkit-user-drag: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+}
+
 .shiki {
   display: block;
   width: var(--code-block-width);
-  overflow:hidden;
+  overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-wrap: break-word;
   counter-reset: step;
   counter-increment: step 0;
+  -webkit-user-drag: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+
+  .code {
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+  }
+
   .line {
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+
     &::before {
       counter-increment: step;
       @apply mr-6 inline-block w-4 border-transparent text-right text-neutral-600 content-[counter(step)];
     }
   }
+
 }

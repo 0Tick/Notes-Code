@@ -1,5 +1,5 @@
 import { NotesCode } from "@/handwriting";
-import { RefObject, FC, useRef, useEffect, useImperativeHandle } from "react";
+import { RefObject, FC, useRef, useEffect, useCallback } from "react";
 import { CanvasImage } from "./CanvasImage";
 import { useFilesystemContext } from "./filesystem-provider";
 import CodeBlock from "./CodeBlock";
@@ -24,6 +24,14 @@ interface PageProps {
   defaultBackground?: string;
   presenterRef: RefObject<DelegatedInkTrailPresenter | null>;
   pageData: NotesCode.Document | undefined;
+  selectionRect: { x: number; y: number; width: number; height: number } | null;
+  selectionBoundingBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+  onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 function calculateThickness(pressure: number, stroke: NotesCode.Stroke) {
   return (stroke.width || 5) * pressure;
@@ -37,6 +45,9 @@ export const Page: FC<PageProps> = ({
   scale,
   onPointerEvent,
   presenterRef,
+  selectionRect,
+  selectionBoundingBox,
+  onContextMenu,
 }) => {
   const {
     // Note: We no longer need loadImage or imagesDirectory here
@@ -44,9 +55,31 @@ export const Page: FC<PageProps> = ({
     pointerDownRef,
     currentPageRef,
     setCurrentPage,
+    setPages,
   } = useFilesystemContext();
 
   const canvasref = useRef<HTMLCanvasElement>(null);
+
+  const handleHeightChange = useCallback((path: string, height: number) => {
+    setPages((prevPages) => {
+      if (!prevPages) return prevPages;
+      const page = prevPages.get(pageID);
+      if (!page) return prevPages;
+      const textBlock = page.textBlocks.find((tb) => tb.path === path);
+      if (textBlock && textBlock.h !== height) {
+        let newPage = structuredClone(page);
+        let newTextBlocks = [...page.textBlocks].filter(
+          (tb) => tb.path !== path
+        );
+        newTextBlocks.push({ ...textBlock, h: height });
+        newPage.textBlocks = newTextBlocks;
+        let newPages = structuredClone(prevPages);
+        newPages.set(pageID, newPage);
+        return newPages;
+      }
+      return prevPages;
+    });
+  }, []);
 
   useEffect(() => {
     const canvas = canvasref.current;
@@ -136,6 +169,19 @@ export const Page: FC<PageProps> = ({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerEnter={onPointerEnter}
+      onContextMenu={onContextMenu}
+      onDrag={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDragStart={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDragStartCapture={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <div
         className="origin-top-left will-change-transform overflow-hidden"
@@ -154,12 +200,22 @@ export const Page: FC<PageProps> = ({
                 imageMeta={imageMeta as NotesCode.Image}
               />
             ))}
-        </div>{/*container for text blocks */}
+        </div>
+        {/*container for text blocks */}
         <div>
           {pageData &&
-            pageData.textBlocks&&
+            pageData.textBlocks &&
             pageData.textBlocks.map((textBlock) => {
-              return <CodeBlock key={textBlock.path} textBlock={textBlock} theme="github-dark"/>;
+              return (
+                <CodeBlock
+                  key={textBlock.path}
+                  textBlock={textBlock}
+                  theme="github-dark"
+                  onHeightChange={(height) =>
+                    handleHeightChange(textBlock.path as string, height)
+                  }
+                />
+              );
             })}
         </div>
         {/* canvas for strokes */}
@@ -169,7 +225,31 @@ export const Page: FC<PageProps> = ({
           style={{ width: pageWidth, height: pageHeight }}
         />
 
-        
+        {/* Selection Rectangle */}
+        {selectionRect && (
+          <div
+            className="absolute border-2 border-blue-500 bg-blue-500 bg-opacity-20 pointer-events-none"
+            style={{
+              left: selectionRect.x,
+              top: selectionRect.y,
+              width: selectionRect.width,
+              height: selectionRect.height,
+            }}
+          />
+        )}
+
+        {/* Selection Bounding Box */}
+        {selectionBoundingBox && (
+          <div
+            className="absolute border-2 border-dashed border-green-500 pointer-events-none"
+            style={{
+              left: selectionBoundingBox.x,
+              top: selectionBoundingBox.y,
+              width: selectionBoundingBox.width,
+              height: selectionBoundingBox.height,
+            }}
+          />
+        )}
       </div>
     </div>
   );

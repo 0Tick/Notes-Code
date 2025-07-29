@@ -25,7 +25,7 @@ export default function RootLayout({
         <meta name="description" content={metadata.description} />
         <title>{metadata.title}</title>
       </head>
-      <body className={inter.className}>
+      <body className={inter.className} draggable={false}>
         <FilesystemProvider>
           <ThemeProvider
             attribute="class"
