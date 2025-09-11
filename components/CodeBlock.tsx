@@ -6,13 +6,15 @@ import { NotesCode } from "@/handwriting";
 interface CodeBlockProps {
   textBlock: NotesCode.ITextBlock;
   theme: string;
+  onHeightChange: (height: number) => void;
 }
 
-export default function CodeBlock({ textBlock, theme }: CodeBlockProps) {
+export default function CodeBlock({ textBlock, theme, onHeightChange }: CodeBlockProps) {
   const { loadText, textCache, getHighlighter } = useFilesystemContext();
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
   const language = (textBlock.path && textBlock.path.split(".").pop()) || "txt";
   const [code, setCode] = useState("");
+  const codeBlockRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getHighlighter().then((h) => {
@@ -23,7 +25,7 @@ export default function CodeBlock({ textBlock, theme }: CodeBlockProps) {
     if (textBlock.path && textCache.has(textBlock.path)) {
       setCode(textCache.get(textBlock.path) as string);
     }
-  }, [textCache]);
+  }, [textCache, textBlock.path]);
   const [html, setHtml] = useState("<div>Loading highlighter...<");
   useEffect(() => {
     if (!highlighter) return;
@@ -34,19 +36,32 @@ export default function CodeBlock({ textBlock, theme }: CodeBlockProps) {
       });
       setHtml(html);
     })();
-  }, [highlighter, code]);
+  }, [highlighter, code, language, theme]);
+
+  useEffect(() => {
+    if (codeBlockRef.current) {
+      const height = codeBlockRef.current.getBoundingClientRect().height;
+      onHeightChange(height);
+    }
+  }, [html, onHeightChange]);
+
   if (!textBlock.path) return <div>Code Block has no filepath</div>;
-  console.log(`translate(${textBlock.x}px, ${textBlock.y}px)`);
   return (
     <div
-      className="absolute h-full w-full pointer-events-none select-none"
+      ref={codeBlockRef}
+      className="absolute pointer-events-none select-none"
       style={{
-        "--code-block-width": textBlock.w + "px",
+        width: textBlock.w + "px",
         top: textBlock.y + "px",
         left: textBlock.x + "px",
       }}
       dangerouslySetInnerHTML={{
         __html: html,
+      }}
+      draggable={false}
+      onDrag={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
       }}
     ></div>
   );

@@ -25,7 +25,8 @@ export function useFilesystem() {
 
   // Effect to check for directory picker availability on mount and initialize storage directory
   useEffect(() => {
-    setDirectoryPickerAvailable(showDirectoryPicker !== undefined);
+    //@ts-expect-error
+    setDirectoryPickerAvailable(typeof (window.showDirectoryPicker as any) === 'function');
     if (
       navigator.storage &&
       navigator.storage.getDirectory !== undefined &&

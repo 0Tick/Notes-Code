@@ -63,6 +63,21 @@ export const CanvasImage: FC<CanvasImageProps> = ({ imageMeta }) => {
           justifyContent: 'center',
           border: '1px dashed #ccc',
         }}
+        className="undraggable"
+        draggable={false}
+        onDrag={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDragCapture={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDragEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+
       >
         <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
       </div>
@@ -97,12 +112,17 @@ export const CanvasImage: FC<CanvasImageProps> = ({ imageMeta }) => {
     <img
       src={imageElement.src}
       alt="User content"
-      className="pointer-events-none"
+      className="pointer-events-none undraggable"
       style={{
         ...style,
         width: imageElement.naturalWidth * (imageMeta.scaleX || 1),
         height: imageElement.naturalHeight * (imageMeta.scaleY || 1),
       }}
+      onDrag={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      draggable={false}
     />
   );
 };
