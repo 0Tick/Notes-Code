@@ -135,8 +135,8 @@ importers:
         specifier: ^0.4.4
         version: 0.4.6(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       protobufjs:
-        specifier: ^7.5.1
-        version: 7.5.3
+        specifier: ^7.5.5
+        version: 7.5.5
       protoc:
         specifier: ^29.6.0
         version: 29.6.0
@@ -1846,8 +1846,8 @@ packages:
   property-information@7.1.0:
     resolution: {integrity: sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ==}
 
-  protobufjs@7.5.3:
-    resolution: {integrity: sha512-sildjKwVqOI2kmFDiXQ6aEB0fjYTafpEvIBs8tOR8qI4spuL9OPROLVu2qZqi/xgCfsHIwVqlaF8JBjWFHnKbw==}
+  protobufjs@7.5.5:
+    resolution: {integrity: sha512-3wY1AxV+VBNW8Yypfd1yQY9pXnqTAN+KwQxL8iYm3/BjKYMNg4i0owhEe26PWDOMaIrzeeF98Lqd5NGz4omiIg==}
     engines: {node: '>=12.0.0'}
 
   protoc@29.6.0:
@@ -3774,7 +3774,7 @@ snapshots:
 
   property-information@7.1.0: {}
 
-  protobufjs@7.5.3:
+  protobufjs@7.5.5:
     dependencies:
       '@protobufjs/aspromise': 1.1.2
       '@protobufjs/base64': 1.1.2
@@ -4091,12 +4091,12 @@ snapshots:
   ts-proto-descriptors@1.16.0:
     dependencies:
       long: 5.3.2
-      protobufjs: 7.5.3
+      protobufjs: 7.5.5
 
   ts-proto@1.181.2:
     dependencies:
       case-anything: 2.1.13
-      protobufjs: 7.5.3
+      protobufjs: 7.5.5
       ts-poet: 6.12.0
       ts-proto-descriptors: 1.16.0
 
